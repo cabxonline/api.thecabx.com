@@ -1,0 +1,159 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id       String  @id @default(uuid())
+  name     String
+  email    String  @unique
+  phone    String?
+  password String
+
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id])
+
+  bookings Booking[]
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Role {
+  id   String @id @default(uuid())
+  name String @unique
+
+  users       User[]
+  permissions RolePermission[]
+
+  createdAt DateTime @default(now())
+}
+
+model Permission {
+  id   String @id @default(uuid())
+  key  String @unique
+  name String
+
+  roles RolePermission[]
+}
+
+model RolePermission {
+  id String @id @default(uuid())
+
+  roleId       String
+  permissionId String
+
+  role       Role       @relation(fields: [roleId], references: [id])
+  permission Permission @relation(fields: [permissionId], references: [id])
+
+  @@unique([roleId, permissionId])
+}
+
+model MailTemplate {
+  id      String @id @default(uuid())
+  name    String
+  subject String
+  body    String
+}
+
+model City {
+  id        String   @id @default(uuid())
+  name      String
+  state     String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model CarCategory {
+  id        String   @id @default(uuid())
+  name      String
+  capacity  Int
+  baseFare  Float
+  perKm     Float
+
+  cars     Car[]
+  bookings Booking[]
+
+  createdAt DateTime @default(now())
+}
+
+model Car {
+  id          String   @id @default(uuid())
+  model       String
+  plateNumber String   @unique
+
+  categoryId String
+  category   CarCategory @relation(fields: [categoryId], references: [id])
+
+  driver Driver?
+}
+
+model Driver {
+  id        String   @id @default(uuid())
+  name      String
+  phone     String
+
+  carId String @unique
+  car   Car @relation(fields: [carId], references: [id])
+
+  lat    Float?
+  lng    Float?
+  status String @default("offline")
+
+  bookings Booking[]
+}
+
+model Booking {
+  id            String   @id @default(uuid())
+  userId        String
+  carCategoryId String
+  driverId      String?
+
+  pickupAddress String
+  dropAddress   String
+
+  status String @default("pending")
+  fare   Float?
+
+  createdAt DateTime @default(now())
+
+  user        User        @relation(fields: [userId], references: [id])
+  carCategory CarCategory @relation(fields: [carCategoryId], references: [id])
+  driver      Driver?     @relation(fields: [driverId], references: [id])
+
+  trip     Trip?
+  payments Payment[]
+
+  @@index([userId])
+  @@index([driverId])
+}
+
+model Trip {
+  id        String   @id @default(uuid())
+  bookingId String   @unique
+
+  startTime DateTime?
+  endTime   DateTime?
+
+  booking Booking @relation(fields: [bookingId], references: [id])
+}
+
+model Payment {
+  id        String   @id @default(uuid())
+  bookingId String
+  amount    Float
+  status    String
+  provider  String
+
+  createdAt DateTime @default(now())
+
+  booking Booking @relation(fields: [bookingId], references: [id])
+
+  @@index([bookingId])
+}
