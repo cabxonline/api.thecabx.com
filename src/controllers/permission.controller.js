@@ -1,4 +1,4 @@
-const prisma = require("../utils/prismaClient")
+const prisma = require("../utils/prisma")
 
 // CREATE
 exports.createPermission = async (req, res) => {

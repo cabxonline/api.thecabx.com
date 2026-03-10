@@ -1,4 +1,4 @@
-const prisma = require("../utils/prismaClient")
+const prisma = require("../utils/prisma")
 const bcrypt = require("bcrypt")
 
 // CREATE USER
