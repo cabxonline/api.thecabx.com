@@ -5,7 +5,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:prisma\"",
-    "dev:server": "nodemon src/index.js",
+    "dev:server": "nodemon index.js",
     "dev:prisma": "npx prisma studio",
     "prisma": "prisma",
     "prisma:generate": "prisma generate",
