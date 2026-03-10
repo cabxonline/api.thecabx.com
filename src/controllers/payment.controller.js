@@ -1,6 +1,6 @@
 const Razorpay = require("razorpay")
 const crypto = require("crypto")
-const prisma = require("../utils/prisma")
+const prisma = require("../utils/prismaClient")
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY,

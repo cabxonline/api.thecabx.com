@@ -1,4 +1,4 @@
-const prisma = require("../utils/prisma")
+const prisma = require("../utils/prismaClient")
 exports.startTrip = async (req, res) => {
 
   const { bookingId } = req.body

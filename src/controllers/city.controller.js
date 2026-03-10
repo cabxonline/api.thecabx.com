@@ -1,4 +1,4 @@
-const prisma = require("../utils/prisma")
+const prisma = require("../utils/prismaClient")
 
 exports.getCities = async (req, res) => {
   try {

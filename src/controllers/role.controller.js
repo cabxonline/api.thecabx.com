@@ -1,4 +1,4 @@
-const prisma = require("../utils/prisma")
+const prisma = require("../utils/prismaClient")
 
 // CREATE ROLE
 exports.createRole = async (req,res)=>{
