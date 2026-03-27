@@ -189,3 +189,39 @@ exports.deleteCar = async (req, res) => {
   }
 
 }
+exports.confirmCar = async (req, res) => {
+  try {
+
+    const { carId, from, to, tripType } = req.body
+
+    const car = await prisma.carCategory.findUnique({
+      where: { id: carId }
+    })
+
+    if (!car) {
+      return res.status(404).json({ message: "Car not found" })
+    }
+
+    // 🔥 TEMP DISTANCE (replace later)
+    const distance = 120
+
+    let multiplier = 1
+
+    if (tripType === "roundtrip") multiplier = 1.8
+    if (tripType === "airport") multiplier = 1.2
+
+    const price =
+      (Number(car.baseFare) + distance * Number(car.perKm)) * multiplier
+
+    res.json({
+      id: car.id,
+      name: car.name,
+      capacity: car.capacity,
+      price: Math.round(price),
+      distance
+    })
+
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+}

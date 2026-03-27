@@ -1,6 +1,7 @@
 const Razorpay = require("razorpay")
 const crypto = require("crypto")
 const prisma = require("../utils/prisma")
+const bcrypt = require("bcrypt")
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY,
@@ -11,27 +12,49 @@ exports.createOrder = async (req, res) => {
 
   try {
 
-    const { amount } = req.body
+    const { carId, from, to, tripType } = req.body
 
-    const order = await razorpay.orders.create({
-      amount: amount * 100, // Razorpay uses paise
-      currency: "INR",
-      receipt: "receipt_" + Date.now()
+    const car = await prisma.carCategory.findUnique({
+      where: { id: carId }
     })
 
-    res.json(order)
+    if (!car) {
+      return res.status(404).json({ message: "Car not found" })
+    }
+
+    const distance = 120
+
+    const total =
+      Number(car.baseFare) + distance * Number(car.perKm)
+
+    const partial = Math.round(total * 0.2)
+
+    const order = await razorpay.orders.create({
+      amount: partial * 100,
+      currency: "INR",
+      receipt: "rcpt_" + Date.now()
+    })
+
+    res.json({
+      order,
+      total,
+      partial
+    })
 
   } catch (err) {
-    console.error(err)
-    res.status(500).json({ error: "Order creation failed" })
+    console.error("RAZORPAY ERROR 👉", err)
+
+    res.status(500).json({
+      error: err.message,
+      details: err
+    })
   }
 
 }
 
 
-exports.verifyPayment = async (req,res)=>{
-
-  try{
+exports.verifyPayment = async (req, res) => {
+  try {
 
     const {
       razorpay_order_id,
@@ -40,188 +63,184 @@ exports.verifyPayment = async (req,res)=>{
       bookingData
     } = req.body
 
+    /* -------------------------
+       VERIFY SIGNATURE
+    --------------------------*/
 
-    /* ------------------------------
-       VERIFY PAYMENT SIGNATURE
-    --------------------------------*/
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+      return res.status(400).json({ message: "Missing payment fields" })
+    }
 
     const body = razorpay_order_id + "|" + razorpay_payment_id
 
-    const expectedSignature = crypto
+    const expected = crypto
       .createHmac("sha256", process.env.RAZORPAY_SECRET)
       .update(body)
       .digest("hex")
 
-    if(expectedSignature !== razorpay_signature){
-      return res.status(400).json({
-        success:false,
-        message:"Payment verification failed"
+    if (expected !== razorpay_signature) {
+      return res.status(400).json({ message: "Invalid payment" })
+    }
+
+    /* -------------------------
+       GET CAR + PRICE
+    --------------------------*/
+
+    if (!bookingData?.categoryId) {
+      return res.status(400).json({ message: "Missing categoryId" })
+    }
+
+    const car = await prisma.carCategory.findUnique({
+      where: { id: bookingData.categoryId }
+    })
+
+    if (!car) {
+      return res.status(404).json({ message: "Car not found" })
+    }
+
+    const distance = 120
+
+    const total =
+      Number(car.baseFare) + distance * Number(car.perKm)
+
+    /* -------------------------
+       USER LOGIC
+    --------------------------*/
+
+    let user = null
+
+    if (bookingData.userId) {
+      user = await prisma.user.findUnique({
+        where: { id: bookingData.userId }
       })
     }
 
+    if (!user && bookingData.customer?.email) {
 
-    /* ------------------------------
-       FIND OR CREATE USER
-    --------------------------------*/
+      const dummyPassword = await bcrypt.hash("otp_login_user", 10)
 
-    let userId = bookingData.userId
-
-    if(!userId){
-
-      const { name,email,phone } = bookingData.customer || {}
-
-      if(!email){
-        return res.status(400).json({
-          message:"Customer email required"
-        })
-      }
-
-      // check if user already exists
-      let user = await prisma.user.findUnique({
-        where:{ email }
+      user = await prisma.user.upsert({
+        where: { email: bookingData.customer.email },
+        update: {},
+        create: {
+          name: bookingData.customer.name || "User",
+          email: bookingData.customer.email,
+          phone: bookingData.customer.phone,
+          password: dummyPassword,
+          roleId: '37f7731e-5e4f-4760-befd-838090068bf6'
+        }
       })
-
-      // if not → create user
-      if(!user){
-
-        user = await prisma.user.create({
-          data:{
-            name,
-            email,
-            phone
-          }
-        })
-
-      }
-
-      userId = user.id
     }
 
+    if (!user) {
+      return res.status(400).json({ message: "User error" })
+    }
 
-    /* ------------------------------
+    /* -------------------------
        CREATE BOOKING
-    --------------------------------*/
+    --------------------------*/
 
     const booking = await prisma.booking.create({
-      data:{
-        userId:userId,
+      data: {
+        userId: user.id,
         carCategoryId: bookingData.categoryId,
         pickupAddress: bookingData.from,
         dropAddress: bookingData.to,
-        fare: bookingData.amount,
-        status:"confirmed"
+        fare: total,
+        status: "confirmed"
       }
     })
 
-
-    /* ------------------------------
-       CREATE PAYMENT RECORD
-    --------------------------------*/
+    /* -------------------------
+       CREATE PAYMENT
+    --------------------------*/
 
     await prisma.payment.create({
-      data:{
+      data: {
         bookingId: booking.id,
-        amount: bookingData.amount,
-        status:"paid",
-        provider:"razorpay"
+        amount: total,
+        status: "paid",
+        provider: "razorpay"
       }
     })
 
-
-    /* ------------------------------
+    /* -------------------------
        RESPONSE
-    --------------------------------*/
+    --------------------------*/
 
     res.json({
-      success:true,
+      success: true,
       booking
     })
 
-
-  }catch(err){
+  } catch (err) {
 
     console.error(err)
 
     res.status(500).json({
-      error:"Verification failed"
+      error: "Verification failed"
     })
 
   }
-
 }
 
-exports.paylaterBooking = async (req,res)=>{
+exports.paylaterBooking = async (req, res) => {
 
-  const {
-    userId,
-    categoryId,
-    from,
-    to,
-    date,
-    time,
-    amount,
-    paymentType,
-    customer
-  } = req.body
+  try {
 
-  let user = null
+    const {
+      userId,
+      categoryId,
+      from,
+      to,
+      customer
+    } = req.body
 
-
-  // 1️⃣ If logged-in user
-  if(userId){
-    user = await prisma.user.findUnique({
-      where:{ id:userId }
-    })
-  }
-
-
-  // 1️⃣ If user email exists → find user
-if(customer?.email){
-
-  user = await prisma.user.findUnique({
-    where:{ email: customer.email }
-  })
-
-}
-  // 2️⃣ If guest → find by email
-  if(!user && customer?.email){
-
-    user = await prisma.user.findUnique({
-      where:{ email: customer.email }
+    const car = await prisma.carCategory.findUnique({
+      where: { id: categoryId }
     })
 
-  }
+    const distance = 120
 
+    const total =
+      Number(car.baseFare) + distance * Number(car.perKm)
 
-  // 3️⃣ If still not found → create new user
-  if(!user){
+    let user = null
 
-    user = await prisma.user.create({
-      data:{
-        name: customer.name,
-        email: customer.email,
-        phone: customer.phone,
-        password: customer.email, // temporary
-        roleId:'37f7731e-5e4f-4760-befd-838090068bf6'
+    if (userId) {
+      user = await prisma.user.findUnique({
+        where: { id: userId }
+      })
+    }
+
+    if (!user && customer?.email) {
+      user = await prisma.user.upsert({
+        where: { email: customer.email },
+        update: {},
+        create: {
+          name: customer.name,
+          email: customer.email,
+          phone: customer.phone
+        }
+      })
+    }
+
+    const booking = await prisma.booking.create({
+      data: {
+        userId: user.id,
+        carCategoryId: categoryId,
+        pickupAddress: from,
+        dropAddress: to,
+        fare: total,
+        status: "pending"
       }
     })
 
+    res.json(booking)
+
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: "Booking failed" })
   }
-
-
-  // 4️⃣ Create booking
-  const booking = await prisma.booking.create({
-    data:{
-      userId:user.id,
-      carCategoryId: categoryId,
-      pickupAddress: from,
-      dropAddress: to,
-      fare: amount,
-      status:"pending"
-    }
-  })
-
-
-  res.json(booking)
 
 }

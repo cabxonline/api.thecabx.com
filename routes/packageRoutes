@@ -1,0 +1,15 @@
+const router = require("express").Router();
+
+const controller = require("../controllers/package.controller");
+const auth = require("../middleware/auth.middleware");
+const permission = require("../middleware/permission.middleware");
+
+// PUBLIC
+router.get("/", controller.getPackages);
+
+// ADMIN
+router.post("/", auth, permission("package.create"), controller.createPackage);
+router.patch("/:id", auth, permission("package.update"), controller.updatePackage);
+router.delete("/:id", auth, permission("package.delete"), controller.deletePackage);
+
+module.exports = router;

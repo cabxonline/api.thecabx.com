@@ -17,6 +17,8 @@ model User {
   roleId String
   role   Role   @relation(fields: [roleId], references: [id])
 
+  offerRedemptions OfferRedemption[]
+
   bookings Booking[]
 
   isActive Boolean @default(true)
@@ -66,16 +68,16 @@ model City {
   id        String   @id @default(uuid())
   name      String
   state     String
+  image     String   // ✅ ADD THIS
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 }
-
 model CarCategory {
-  id        String   @id @default(uuid())
-  name      String
-  capacity  Int
-  baseFare  Float
-  perKm     Float
+  id       String @id @default(uuid())
+  name     String
+  capacity Int
+  baseFare Float
+  perKm    Float
 
   cars     Car[]
   bookings Booking[]
@@ -84,9 +86,9 @@ model CarCategory {
 }
 
 model Car {
-  id          String   @id @default(uuid())
+  id          String @id @default(uuid())
   model       String
-  plateNumber String   @unique
+  plateNumber String @unique
 
   categoryId String
   category   CarCategory @relation(fields: [categoryId], references: [id])
@@ -95,12 +97,12 @@ model Car {
 }
 
 model Driver {
-  id        String   @id @default(uuid())
-  name      String
-  phone     String
+  id    String @id @default(uuid())
+  name  String
+  phone String
 
   carId String @unique
-  car   Car @relation(fields: [carId], references: [id])
+  car   Car    @relation(fields: [carId], references: [id])
 
   lat    Float?
   lng    Float?
@@ -110,7 +112,7 @@ model Driver {
 }
 
 model Booking {
-  id            String   @id @default(uuid())
+  id            String  @id @default(uuid())
   userId        String
   carCategoryId String
   driverId      String?
@@ -135,8 +137,8 @@ model Booking {
 }
 
 model Trip {
-  id        String   @id @default(uuid())
-  bookingId String   @unique
+  id        String @id @default(uuid())
+  bookingId String @unique
 
   startTime DateTime?
   endTime   DateTime?
@@ -145,7 +147,7 @@ model Trip {
 }
 
 model Payment {
-  id        String   @id @default(uuid())
+  id        String @id @default(uuid())
   bookingId String
   amount    Float
   status    String
@@ -156,4 +158,82 @@ model Payment {
   booking Booking @relation(fields: [bookingId], references: [id])
 
   @@index([bookingId])
+}
+
+model Offer {
+  id          String  @id @default(uuid())
+  title       String
+  description String?
+  code        String  @unique
+  discount    Float
+
+  type        String // "flat" or "percent"
+  maxDiscount Float?
+
+  minAmount Float? // minimum booking value
+
+  usageLimit Int? // total usage limit
+  usedCount  Int  @default(0)
+
+  isActive Boolean @default(true)
+
+  expiresAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  redemptions OfferRedemption[]
+}
+
+model OfferRedemption {
+  id String @id @default(uuid())
+
+  offerId String
+  userId  String
+
+  usedAt DateTime @default(now())
+
+  offer Offer @relation(fields: [offerId], references: [id])
+  user  User  @relation(fields: [userId], references: [id])
+
+  @@unique([offerId, userId]) // one user = one use
+}
+
+model Package {
+  id        String   @id @default(uuid())
+  title     String
+  image     String
+  price     Float
+  duration  String
+  features  String[] // PostgreSQL array
+  tag       String?
+  isActive  Boolean  @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model BlogCategory {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  blogs     Blog[]
+
+  createdAt DateTime @default(now())
+}
+
+model Blog {
+  id          String   @id @default(uuid())
+  title       String
+  slug        String   @unique
+  description String
+  content     String
+  image       String?
+
+  categoryId  String
+  category    BlogCategory @relation(fields: [categoryId], references: [id])
+
+  isPublished Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

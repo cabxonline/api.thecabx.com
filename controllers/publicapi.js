@@ -8,6 +8,7 @@ exports.searchCars = async (req, res) => {
   try {
 
     const { tripType, from, to, date } = req.body
+    console.log(req.body)
 
     const categories = await prisma.carCategory.findMany()
 
@@ -16,7 +17,14 @@ exports.searchCars = async (req, res) => {
       const distance = 120 // placeholder distance
 
       const price = Number(cat.baseFare) + (distance * Number(cat.perKm))
-
+      console.log({
+        id: cat.id,
+        name: cat.name,
+        type: "Cab",
+        capacity: cat.capacity,
+        bags: 2,
+        price
+      })
       return {
         id: cat.id,
         name: cat.name,
@@ -25,6 +33,7 @@ exports.searchCars = async (req, res) => {
         bags: 2,
         price
       }
+
 
     })
 
@@ -47,9 +56,9 @@ exports.searchCars = async (req, res) => {
 /*
 DASHBOARD STATS
 */
-exports.getStats = async (req,res)=>{
+exports.getStats = async (req, res) => {
 
-  try{
+  try {
 
     const users = await prisma.user.count()
     const bookings = await prisma.booking.count()
@@ -57,21 +66,21 @@ exports.getStats = async (req,res)=>{
     const cities = await prisma.city.count()
 
     const revenueData = await prisma.payment.aggregate({
-      _sum:{
-        amount:true
+      _sum: {
+        amount: true
       }
     })
 
     const revenue = Number(revenueData._sum.amount || 0)
 
     const recentBookings = await prisma.booking.findMany({
-      take:5,
-      orderBy:{
-        createdAt:"desc"
+      take: 5,
+      orderBy: {
+        createdAt: "desc"
       },
-      include:{
-        user:true,
-        carCategory:true
+      include: {
+        user: true,
+        carCategory: true
       }
     })
 
@@ -97,12 +106,12 @@ exports.getStats = async (req,res)=>{
       bookings: Number(row.bookings)
     }))
 
-console.log({
+    console.log({
 
-      users:Number(users),
-      bookings:Number(bookings),
-      cars:Number(cars),
-      cities:Number(cities),
+      users: Number(users),
+      bookings: Number(bookings),
+      cars: Number(cars),
+      cities: Number(cities),
       revenue,
       recentBookings,
       monthlyBookings
@@ -111,22 +120,22 @@ console.log({
 
     res.json({
 
-      users:Number(users),
-      bookings:Number(bookings),
-      cars:Number(cars),
-      cities:Number(cities),
+      users: Number(users),
+      bookings: Number(bookings),
+      cars: Number(cars),
+      cities: Number(cities),
       revenue,
       recentBookings,
       monthlyBookings
 
     })
 
-  }catch(err){
+  } catch (err) {
 
     console.error(err)
 
     res.status(500).json({
-      message:"stats failed"
+      message: "stats failed"
     })
 
   }

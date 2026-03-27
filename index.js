@@ -13,8 +13,8 @@ const app = express()
 
 app.use(cors({
   origin: "*",
-  methods: ["GET","POST","PUT","PATCH","DELETE"],
-  allowedHeaders: ["Content-Type","Authorization"]
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+  allowedHeaders: ["Content-Type", "Authorization"]
 }))
 
 app.use(express.json())
@@ -27,6 +27,7 @@ app.use(express.urlencoded({ extended: true }))
 */
 
 app.use("/api/auth", require("./routes/auth.routes"))
+app.use("/api/userauth", require("./routes/userauth.routes"))
 app.use("/api/users", require("./routes/user.routes"))
 app.use("/api/roles", require("./routes/role.routes"))
 app.use("/api/permissions", require("./routes/permission.routes"))
@@ -36,6 +37,11 @@ app.use("/api/car-categories", require("./routes/carCategory.routes"))
 app.use("/api/cars", require("./routes/car.routes"))
 app.use("/api/payments", require("./routes/payment.routes"))
 app.use("/api/drivers", require("./routes/driver.routes"))
+app.use("/api/offers", require("./routes/offerRoutes"));
+app.use("/api/packages", require("./routes/packageRoutes"));
+app.use("/api/blogs", require("./routes/blogRoutes"));
+app.use("/api/blog-categories", require("./routes/categoryRoutes"));
+app.use("/api/dates", require("./routes/dates.routes"));
 /*
 |--------------------------------------------------------------------------
 | Public Booking APIs (search etc)
@@ -50,11 +56,11 @@ app.use("/api", require("./routes/public.routes"))
 |--------------------------------------------------------------------------
 */
 
-app.get("/", (req,res)=>{
+app.get("/", (req, res) => {
   res.json({
-    status:"OK",
-    service:"CabX API",
-    time:new Date()
+    status: "OK",
+    service: "CabX API",
+    time: new Date()
   })
 })
 
@@ -64,9 +70,9 @@ app.get("/", (req,res)=>{
 |--------------------------------------------------------------------------
 */
 
-app.use((req,res)=>{
+app.use((req, res) => {
   res.status(404).json({
-    error:"Route not found"
+    error: "Route not found"
   })
 })
 
@@ -76,11 +82,11 @@ app.use((req,res)=>{
 |--------------------------------------------------------------------------
 */
 
-app.use((err,req,res,next)=>{
+app.use((err, req, res, next) => {
   console.error(err)
 
   res.status(500).json({
-    error:"Internal Server Error"
+    error: "Internal Server Error"
   })
 })
 
@@ -92,6 +98,6 @@ app.use((err,req,res,next)=>{
 
 const PORT = 8000
 
-app.listen(PORT,()=>{
+app.listen(PORT, () => {
   console.log(`🚀 CabX API running on http://localhost:${PORT}`)
 })

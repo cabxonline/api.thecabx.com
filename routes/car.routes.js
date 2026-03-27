@@ -13,5 +13,6 @@ router.patch("/:id", carController.updateCar)
 
 router.delete("/:id", carController.deleteCar)
 
+router.post("/confirm", carController.confirmCar)
 
 module.exports = router
