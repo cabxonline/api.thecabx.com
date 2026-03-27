@@ -12,7 +12,11 @@ exports.createOrder = async (req, res) => {
 
   try {
 
-    const { carId, from, to, tripType } = req.body
+    const { carId, from, to, tripType, paymentType } = req.body
+
+    if (!carId) {
+      return res.status(400).json({ message: "Missing carId" })
+    }
 
     const car = await prisma.carCategory.findUnique({
       where: { id: carId }
@@ -22,6 +26,7 @@ exports.createOrder = async (req, res) => {
       return res.status(404).json({ message: "Car not found" })
     }
 
+    // 🔥 TEMP (later replace with real distance API)
     const distance = 120
 
     const total =
@@ -29,8 +34,15 @@ exports.createOrder = async (req, res) => {
 
     const partial = Math.round(total * 0.2)
 
+    // ✅ FIX: decide amount based on paymentType
+    let payableAmount = total
+
+    if (paymentType === "partial") {
+      payableAmount = partial
+    }
+
     const order = await razorpay.orders.create({
-      amount: partial * 100,
+      amount: payableAmount * 100, // 🔥 ALWAYS THIS
       currency: "INR",
       receipt: "rcpt_" + Date.now()
     })
@@ -38,18 +50,19 @@ exports.createOrder = async (req, res) => {
     res.json({
       order,
       total,
-      partial
+      partial,
+      payableAmount   // optional (debug / frontend use)
     })
 
   } catch (err) {
+
     console.error("RAZORPAY ERROR 👉", err)
 
     res.status(500).json({
-      error: err.message,
-      details: err
+      error: "Order creation failed"
     })
-  }
 
+  }
 }
 
 
