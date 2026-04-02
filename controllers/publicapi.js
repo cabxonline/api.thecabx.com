@@ -4,51 +4,60 @@ const prisma = require("../utils/prisma")
 SEARCH CARS
 */
 exports.searchCars = async (req, res) => {
-
   try {
 
     const { tripType, from, to, date } = req.body
-    console.log(req.body)
 
     const categories = await prisma.carCategory.findMany()
 
-    const cars = categories.map(cat => {
+    const selectedDate = new Date(date)
 
-      const distance = 120 // placeholder distance
+    const cars = await Promise.all(
+      categories.map(async (cat) => {
 
-      const price = Number(cat.baseFare) + (distance * Number(cat.perKm))
-      console.log({
-        id: cat.id,
-        name: cat.name,
-        type: "Cab",
-        capacity: cat.capacity,
-        bags: 2,
-        price
+        const distance = 120 // later replace with real API
+
+        // 🔥 CHECK MANUAL PRICE FIRST
+        const manual = await prisma.manualPricing.findFirst({
+          where: {
+            carId: cat.id,
+            from,
+            to,
+            date: {
+              gte: new Date(selectedDate.setHours(0, 0, 0, 0)),
+              lte: new Date(selectedDate.setHours(23, 59, 59, 999))
+            }
+          }
+        })
+
+        let price
+
+        if (manual) {
+          price = manual.price
+        } else {
+          price =
+            Number(cat.baseFare) +
+            distance * Number(cat.perKm)
+        }
+
+        return {
+          id: cat.id,
+          name: cat.name,
+          type: "Cab",
+          capacity: cat.capacity,
+          bags: 2,
+          price
+        }
+
       })
-      return {
-        id: cat.id,
-        name: cat.name,
-        type: "Cab",
-        capacity: cat.capacity,
-        bags: 2,
-        price
-      }
-
-
-    })
+    )
 
     res.json(cars)
 
   } catch (err) {
-
     console.error(err)
-
-    res.status(500).json({
-      error: err.message
-    })
-
+    res.status(500).json({ error: err.message })
   }
-
 }
 
 

@@ -82,6 +82,8 @@ model CarCategory {
   cars     Car[]
   bookings Booking[]
 
+  manualPricing ManualPricing[]   // ✅ ADD THIS
+
   createdAt DateTime @default(now())
 }
 
@@ -236,4 +238,24 @@ model Blog {
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model ManualPricing {
+  id        String   @id @default(uuid())
+
+  carId     String
+  from      String
+  to        String
+
+  date      DateTime @db.Date   // 🔥 only date, no time issue
+  price     Float
+
+  tripType  String?             // optional (oneway / round)
+
+  car       CarCategory @relation(fields: [carId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([carId, from, to, date])   // ❌ no duplicate pricing
+  @@index([carId, from, to, date])    // ⚡ fast query
 }
