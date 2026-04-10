@@ -2,6 +2,7 @@ const express = require("express")
 
 const {
     createManualPricing,
+    createBulkManualPricing,
     getManualPricing,
     getSingleManualPricing,
     updateManualPricing,
@@ -11,9 +12,10 @@ const {
 const router = express.Router()
 
 router.post("/", createManualPricing)
+router.post("/bulk", createBulkManualPricing)
 router.get("/", getManualPricing)
 router.get("/:id", getSingleManualPricing)
 router.put("/:id", updateManualPricing)
 router.delete("/:id", deleteManualPricing)
 
-export default router
+module.exports = router;

@@ -35,6 +35,38 @@ router.patch(
   bookingController.updateBooking
 )
 
+// RESOLVE PENDING CASH
+router.post(
+  "/:id/payment/cash",
+  auth,
+  permission("booking.update"),
+  bookingController.resolveCashPayment
+)
+
+// SIMULATE PAYMENT LINK
+router.post(
+  "/:id/payment/link",
+  auth,
+  permission("booking.update"),
+  bookingController.sendPaymentLink
+)
+
+// RESCHEDULE BOOKING
+router.post(
+  "/:id/reschedule",
+  auth,
+  permission("booking.update"),
+  bookingController.rescheduleBooking
+)
+
+// CANCEL BOOKING
+router.post(
+  "/:id/cancel",
+  auth,
+  permission("booking.update"),
+  bookingController.cancelBooking
+)
+
 // DELETE BOOKING
 router.delete(
   "/:id",

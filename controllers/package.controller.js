@@ -2,39 +2,81 @@ const prisma = require("../utils/prisma");
 
 // CREATE
 const createPackage = async (req, res) => {
-    const pkg = await prisma.package.create({ data: req.body });
-    res.json(pkg);
+    try {
+        const data = await prisma.package.create({
+            data: req.body
+        });
+        res.status(201).json(data);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 };
 
-// GET ALL (PUBLIC)
+// GET ALL
 const getPackages = async (req, res) => {
-    const data = await prisma.package.findMany({
-        where: { isActive: true },
-        orderBy: { createdAt: "desc" },
-    });
-    res.json(data);
+    try {
+        const { categoryId } = req.query;
+
+        const data = await prisma.package.findMany({
+            where: {
+                isActive: true,
+                ...(categoryId && { categoryId })
+            },
+            include: { category: true }
+        });
+
+        res.json(data);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
+// GET ONE
+const getPackage = async (req, res) => {
+    try {
+        const data = await prisma.package.findUnique({
+            where: { id: req.params.id },
+            include: { category: true }
+        });
+
+        res.json(data);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 };
 
 // UPDATE
 const updatePackage = async (req, res) => {
-    const data = await prisma.package.update({
-        where: { id: req.params.id },
-        data: req.body,
-    });
-    res.json(data);
+    try {
+        const data = await prisma.package.update({
+            where: { id: req.params.id },
+            data: req.body
+        });
+
+        res.json(data);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 };
 
-// DELETE
+// DELETE (soft)
 const deletePackage = async (req, res) => {
-    await prisma.package.delete({
-        where: { id: req.params.id },
-    });
-    res.json({ message: "Deleted" });
+    try {
+        await prisma.package.update({
+            where: { id: req.params.id },
+            data: { isActive: false }
+        });
+
+        res.json({ message: "Package deleted" });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 };
 
 module.exports = {
     createPackage,
     getPackages,
+    getPackage,
     updatePackage,
-    deletePackage,
+    deletePackage
 };

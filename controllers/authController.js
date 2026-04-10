@@ -1,6 +1,8 @@
 const prisma = require("../utils/prisma")
 const bcrypt = require("bcrypt")
 const jwt = require("jsonwebtoken")
+const { OAuth2Client } = require("google-auth-library")
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID)
 
 exports.register = async (req,res)=>{
   try{
@@ -150,5 +152,92 @@ exports.resetPassword = async(req,res)=>{
 
   }catch(err){
     res.status(500).json({error:err.message})
+  }
+}
+
+exports.googleLogin = async (req, res) => {
+  try {
+    const { credential } = req.body
+
+    const ticket = await client.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID
+    })
+
+    const payload = ticket.getPayload()
+    const { email, name, sub: googleId } = payload
+
+    let user = await prisma.user.findUnique({
+      where: { email },
+      include: {
+        role: {
+          include: {
+            permissions: {
+              include: {
+                permission: true
+              }
+            }
+          }
+        }
+      }
+    })
+
+    if (!user) {
+      // Auto-register new Google user
+      let role = await prisma.role.findFirst({
+        where: { name: "USER" }
+      })
+      
+      if(!role) {
+         role = await prisma.role.findFirst() // fallback
+      }
+
+      user = await prisma.user.create({
+        data: {
+          name,
+          email,
+          password: await bcrypt.hash(googleId, 10), // dummy
+          roleId: role.id
+        },
+        include: {
+          role: {
+            include: {
+              permissions: {
+                include: {
+                  permission: true
+                }
+              }
+            }
+          }
+        }
+      })
+    }
+
+    const permissions = user.role.permissions.map(p => p.permission.key)
+
+    const token = jwt.sign(
+      {
+        userId: user.id,
+        role: user.role.name,
+        permissions
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    )
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role.name
+      },
+      permissions
+    })
+
+  } catch (err) {
+    console.error("Google verify error:", err)
+    res.status(500).json({ error: "Google Authentication failed" })
   }
 }

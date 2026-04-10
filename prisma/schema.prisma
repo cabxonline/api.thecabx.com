@@ -58,10 +58,12 @@ model RolePermission {
 }
 
 model MailTemplate {
-  id      String @id @default(uuid())
-  name    String
-  subject String
-  body    String
+  id        String   @id @default(uuid())
+  key       String   @unique
+  name      String
+  subject   String
+  body      String
+  isActive  Boolean  @default(true)
 }
 
 model City {
@@ -125,7 +127,8 @@ model Booking {
   status String @default("pending")
   fare   Float?
 
-  createdAt DateTime @default(now())
+  scheduledAt DateTime?
+  createdAt   DateTime @default(now())
 
   user        User        @relation(fields: [userId], references: [id])
   carCategory CarCategory @relation(fields: [carCategoryId], references: [id])
@@ -133,6 +136,7 @@ model Booking {
 
   trip     Trip?
   payments Payment[]
+  logs     BookingLog[] // ✅ ADD THIS
 
   @@index([userId])
   @@index([driverId])
@@ -201,18 +205,32 @@ model OfferRedemption {
   @@unique([offerId, userId]) // one user = one use
 }
 
-model Package {
+model PackageCategory {
   id        String   @id @default(uuid())
-  title     String
-  image     String
-  price     Float
-  duration  String
-  features  String[] // PostgreSQL array
-  tag       String?
+  name      String
+  image     String?        // category banner/icon
   isActive  Boolean  @default(true)
-
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  packages  Package[]
+}
+
+model Package {
+  id          String   @id @default(uuid())
+  title       String
+  images      String[]     // multiple images (IMPORTANT)
+  price       Float
+  duration    String
+  features    String[]
+  tag         String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  categoryId  String?
+  category    PackageCategory? @relation(fields: [categoryId], references: [id])
+  enquiries   PackageEnquiry[]
 }
 
 model BlogCategory {
@@ -258,4 +276,48 @@ model ManualPricing {
 
   @@unique([carId, from, to, date])   // ❌ no duplicate pricing
   @@index([carId, from, to, date])    // ⚡ fast query
+}
+
+model stock {
+  id        String   @id @default(uuid())
+  from      String
+  to        String
+  car       String
+  price     Float
+  trend     Trend
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+enum Trend {
+  UP
+  DOWN
+}
+
+model PackageEnquiry {
+  id        String   @id @default(uuid())
+  name      String
+  email     String?
+  phone     String
+  fromDate  String
+  toDate    String
+  message   String?
+  
+  packageId String
+  package   Package  @relation(fields: [packageId], references: [id], onDelete: Cascade)
+
+  status    String   @default("pending") // pending, contacted, resolved
+  createdAt DateTime @default(now())
+}
+
+model BookingLog {
+  id        String   @id @default(uuid())
+  bookingId String
+  action    String   // e.g. "DISPATCH", "REASSIGN", "PAYMENT_CASH"
+  message   String
+  createdAt DateTime @default(now())
+
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
 }

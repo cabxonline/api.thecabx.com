@@ -12,7 +12,7 @@ exports.createOrder = async (req, res) => {
 
   try {
 
-    const { carId, from, to, tripType, paymentType } = req.body
+    const { carId, from, to, tripType, paymentType, extras } = req.body
 
     if (!carId) {
       return res.status(400).json({ message: "Missing carId" })
@@ -29,8 +29,17 @@ exports.createOrder = async (req, res) => {
     // 🔥 TEMP (later replace with real distance API)
     const distance = 120
 
-    const total =
+    let total =
       Number(car.baseFare) + distance * Number(car.perKm)
+
+    let multiplier = 1
+    if (tripType === "roundtrip") multiplier = 1.8
+    if (tripType === "airport") multiplier = 1.2
+
+    total = total * multiplier
+
+    if (extras?.pet) total += 500
+    if (extras?.carrier) total += 100
 
     const partial = Math.round(total * 0.2)
 
@@ -113,8 +122,17 @@ exports.verifyPayment = async (req, res) => {
 
     const distance = 120
 
-    const total =
+    let total =
       Number(car.baseFare) + distance * Number(car.perKm)
+
+    let multiplier = 1
+    if (bookingData?.tripType === "roundtrip") multiplier = 1.8
+    if (bookingData?.tripType === "airport") multiplier = 1.2
+
+    total = total * multiplier
+
+    if (bookingData?.extras?.pet) total += 500
+    if (bookingData?.extras?.carrier) total += 100
 
     /* -------------------------
        USER LOGIC
@@ -206,7 +224,9 @@ exports.paylaterBooking = async (req, res) => {
       categoryId,
       from,
       to,
-      customer
+      tripType,
+      customer,
+      extras
     } = req.body
 
     const car = await prisma.carCategory.findUnique({
@@ -215,8 +235,17 @@ exports.paylaterBooking = async (req, res) => {
 
     const distance = 120
 
-    const total =
+    let total =
       Number(car.baseFare) + distance * Number(car.perKm)
+
+    let multiplier = 1
+    if (tripType === "roundtrip") multiplier = 1.8
+    if (tripType === "airport") multiplier = 1.2
+
+    total = total * multiplier
+
+    if (extras?.pet) total += 500
+    if (extras?.carrier) total += 100
 
     let user = null
 
