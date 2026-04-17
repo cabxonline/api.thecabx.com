@@ -2,6 +2,16 @@ require("dotenv").config()
 
 const express = require("express")
 const cors = require("cors")
+const prisma = require("./utils/prisma")
+
+// Check database connectivity
+prisma.$connect()
+  .then(() => {
+    console.log("✅ Database connectivity established")
+  })
+  .catch((err) => {
+    console.error("❌ Database connection failed:", err.message)
+  })
 
 const app = express()
 
