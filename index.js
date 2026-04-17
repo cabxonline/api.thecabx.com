@@ -21,16 +21,11 @@ const app = express()
 |--------------------------------------------------------------------------
 */
 
-// Request logging middleware
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - Origin: ${req.get('origin')}`)
-  next()
-})
-
 app.use(cors({
-  origin: "*",
+  origin: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"]
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
+  credentials: true
 }))
 
 app.use(express.json())
@@ -77,10 +72,6 @@ app.get("/", (req, res) => {
     service: "CabX API",
     time: new Date()
   })
-})
-
-app.get("/api/health", (req, res) => {
-  res.json({ status: "CORS_ALIVE", message: "If you see this, CORS is working!" })
 })
 
 /*
