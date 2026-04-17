@@ -21,11 +21,16 @@ const app = express()
 |--------------------------------------------------------------------------
 */
 
+// Request logging middleware
+app.use((req, res, next) => {
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - Origin: ${req.get('origin')}`)
+  next()
+})
+
 app.use(cors({
-  origin: true,
+  origin: "*",
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
-  credentials: true
+  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"]
 }))
 
 app.options("*", cors())
@@ -76,6 +81,10 @@ app.get("/", (req, res) => {
   })
 })
 
+app.get("/api/health", (req, res) => {
+  res.json({ status: "CORS_ALIVE", message: "If you see this, CORS is working!" })
+})
+
 /*
 |--------------------------------------------------------------------------
 | 404 Handler
@@ -108,7 +117,7 @@ app.use((err, req, res, next) => {
 |--------------------------------------------------------------------------
 */
 
-const PORT = 8000
+const PORT = process.env.PORT || 8000
 
 app.listen(PORT, () => {
   console.log(`🚀 CabX API running on http://localhost:${PORT}`)
