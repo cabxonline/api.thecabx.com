@@ -21,12 +21,19 @@ const app = express()
 |--------------------------------------------------------------------------
 */
 
-app.use(cors({
-  origin: true,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
-  credentials: true
-}))
+// Global CORS Header Injector (Ensures headers exist even on errors)
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*")
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS")
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, Accept, Origin")
+  
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200)
+  }
+  next()
+})
+
+app.use(cors())
 
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
