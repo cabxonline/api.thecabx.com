@@ -25,7 +25,7 @@ const getCategories = async (req, res) => {
 const getCategory = async (req, res) => {
     try {
         const data = await prisma.packageCategory.findUnique({
-            where: { id: req.params.id }
+            where: { id: Number(req.params.id) }
         });
         res.json(data);
     } catch (err) {
@@ -36,7 +36,7 @@ const getCategory = async (req, res) => {
 const updateCategory = async (req, res) => {
     try {
         const data = await prisma.packageCategory.update({
-            where: { id: req.params.id },
+            where: { id: Number(req.params.id) },
             data: req.body
         });
         res.json(data);
@@ -48,10 +48,10 @@ const updateCategory = async (req, res) => {
 const deleteCategory = async (req, res) => {
     try {
         await prisma.packageCategory.update({
-            where: { id: req.params.id },
+            where: { id: Number(req.params.id) },
             data: { isActive: false }
         });
-        res.json({ message: "Category deleted" });
+        res.json({ message: "Category deactivated (soft-deleted)" });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

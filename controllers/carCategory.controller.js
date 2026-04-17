@@ -2,14 +2,12 @@ const prisma = require("../utils/prisma")
 
 exports.createCategory = async (req, res) => {
 
-  const { name, capacity, baseFare, perKm } = req.body
+  const { name, capacity } = req.body
 
   const category = await prisma.carCategory.create({
     data: {
       name,
-      capacity,
-      baseFare,
-      perKm
+      capacity: Number(capacity)
     }
   })
 
@@ -22,7 +20,7 @@ exports.getCategory = async (req, res) => {
     const { id } = req.params
 
     const category = await prisma.carCategory.findUnique({
-      where: { id }
+      where: { id: Number(id) }
     })
 
     if (!category) {
@@ -55,9 +53,13 @@ exports.updateCategory = async (req, res) => {
 
   const { id } = req.params
 
+  const { capacity, ...rest } = req.body
+  const updateData = { ...rest }
+  if (capacity) updateData.capacity = Number(capacity)
+
   const category = await prisma.carCategory.update({
-    where: { id },
-    data: req.body
+    where: { id: Number(id) },
+    data: updateData
   })
 
   res.json(category)
@@ -69,7 +71,7 @@ exports.deleteCategory = async (req, res) => {
   const { id } = req.params
 
   await prisma.carCategory.delete({
-    where: { id }
+    where: { id: Number(id) }
   })
 
   res.json({ message: "Deleted" })

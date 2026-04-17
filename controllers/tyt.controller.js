@@ -1,29 +1,42 @@
-const { PrismaClient } = require("@prisma/client");
+const prisma = require("../utils/prisma")
 
-const prisma = new PrismaClient();
+const VALID_TREND = ["UP", "DOWN"];
 
 // CREATE
 const createStock = async (req, res) => {
     try {
-        const { from, to, car, price, trend } = req.body;
+        const { from, car, price, trend } = req.body;
 
-        if (!from || !to || !car || !price || !trend) {
+        if (!from || !car || price === undefined || !trend) {
             return res.status(400).json({ message: "All fields required" });
+        }
+
+        if (isNaN(Number(price))) {
+            return res.status(400).json({ message: "Invalid price" });
+        }
+
+        if (!VALID_TREND.includes(trend.toUpperCase())) {
+            return res.status(400).json({ message: "Invalid trend" });
         }
 
         const stock = await prisma.stock.create({
             data: {
-                from,
-                to,
-                car,
+                from: from.trim(),
+                car: car.trim(),
                 price: Number(price),
-                trend
+                trend: trend.toUpperCase()
             }
         });
 
         res.status(201).json(stock);
+
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        if (err.code === "P2002") {
+            return res.status(400).json({
+                message: "This route + car already exists"
+            });
+        }
+        res.status(500).json({ message: "Something went wrong" });
     }
 };
 
@@ -33,26 +46,35 @@ const createBulkStock = async (req, res) => {
         const { records } = req.body;
 
         if (!Array.isArray(records) || records.length === 0) {
-            return res.status(400).json({ message: "An array of records is required" });
+            return res.status(400).json({ message: "Records array required" });
         }
 
-        const validData = records.map(r => ({
-            from: String(r.from).trim(),
-            to: String(r.to).trim(),
-            car: String(r.car).trim(),
-            price: Number(r.price),
-            trend: (String(r.trend).toUpperCase() === 'UP') ? 'UP' : 'DOWN',
-        }));
+        const validData = records.map(r => {
+            if (!r.from || !r.car || isNaN(Number(r.price))) {
+                throw new Error("Invalid record data");
+            }
+
+            return {
+                from: String(r.from).trim(),
+                car: String(r.car).trim(),
+                price: Number(r.price),
+                trend: VALID_TREND.includes(String(r.trend).toUpperCase())
+                    ? String(r.trend).toUpperCase()
+                    : "DOWN",
+            };
+        });
 
         const result = await prisma.stock.createMany({
             data: validData,
             skipDuplicates: true
         });
 
-        res.status(201).json({ message: `Successfully inserted ${result.count} records.`, count: result.count });
+        res.status(201).json({
+            message: `Inserted ${result.count} records`,
+            count: result.count
+        });
     } catch (err) {
-        console.error("Bulk Insert Error:", err);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ message: err.message });
     }
 };
 
@@ -61,78 +83,81 @@ const getStocks = async (req, res) => {
     try {
         const stocks = await prisma.stock.findMany({
             where: { isActive: true },
-            orderBy: { updatedAt: "desc" }
+            orderBy: { id: "desc" }
         });
-
         res.json(stocks);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error("Fetch stocks error:", err);
+        res.status(500).json({ message: "Failed to fetch stocks", error: err.message });
     }
 };
 
 // GET SINGLE
 const getStock = async (req, res) => {
     try {
-        const { id } = req.params;
-
-        const stock = await prisma.stock.findUnique({
-            where: { id }
+        const id = Number(req.params.id);
+        const stock = await prisma.stock.findFirst({
+            where: { id, isActive: true }
         });
 
         if (!stock) {
             return res.status(404).json({ message: "Stock not found" });
         }
-
         res.json(stock);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error("Fetch stock error:", err);
+        res.status(500).json({ message: "Failed to fetch stock", error: err.message });
     }
 };
 
 // UPDATE
 const updateStock = async (req, res) => {
     try {
-        const { id } = req.params;
-        const { from, to, car, price, trend } = req.body;
+        const id = Number(req.params.id);
+        const { from, car, price, trend } = req.body;
+
+        const data = {
+            ...(from !== undefined && { from: from.trim() }),
+            ...(car !== undefined && { car: car.trim() }),
+            ...(price !== undefined && !isNaN(Number(price)) && { price: Number(price) }),
+            ...(trend !== undefined && VALID_TREND.includes(trend.toUpperCase()) && {
+                trend: trend.toUpperCase()
+            }),
+        };
+
+        if (Object.keys(data).length === 0) {
+            return res.status(400).json({ message: "No valid fields to update" });
+        }
 
         const stock = await prisma.stock.update({
             where: { id },
-            data: {
-                ...(from && { from }),
-                ...(to && { to }),
-                ...(car && { car }),
-                ...(price && { price: Number(price) }),
-                ...(trend && { trend })
-            }
+            data
         });
 
         res.json(stock);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error(err);
+        res.status(500).json({ message: err.message });
     }
 };
 
-// DELETE (soft)
+// DELETE 
 const deleteStock = async (req, res) => {
     try {
-        const { id } = req.params;
-
-        await prisma.stock.update({
-            where: { id },
-            data: { isActive: false }
+        const id = Number(req.params.id);
+        await prisma.stock.delete({
+            where: { id }
         });
-
-        res.json({ message: "Stock deleted" });
+        res.json({ message: "Stock permanently deleted" });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ message: err.message });
     }
 };
 
 // TOGGLE TREND
 const toggleTrend = async (req, res) => {
     try {
-        const { id } = req.params;
-
+        const id = Number(req.params.id);
         const stock = await prisma.stock.findUnique({
             where: { id }
         });
@@ -149,12 +174,11 @@ const toggleTrend = async (req, res) => {
         });
 
         res.json(updated);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+    } catch {
+        res.status(500).json({ message: "Toggle failed" });
     }
 };
 
-// EXPORT
 module.exports = {
     createStock,
     createBulkStock,

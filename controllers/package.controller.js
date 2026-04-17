@@ -3,8 +3,14 @@ const prisma = require("../utils/prisma");
 // CREATE
 const createPackage = async (req, res) => {
     try {
+        const { categoryId, price, carPrices, ...rest } = req.body;
         const data = await prisma.package.create({
-            data: req.body
+            data: {
+                ...rest,
+                categoryId: categoryId ? Number(categoryId) : null,
+                price: Number(price),
+                carPrices: carPrices || {}
+            }
         });
         res.status(201).json(data);
     } catch (err) {
@@ -20,7 +26,7 @@ const getPackages = async (req, res) => {
         const data = await prisma.package.findMany({
             where: {
                 isActive: true,
-                ...(categoryId && { categoryId })
+                ...(categoryId && { categoryId: Number(categoryId) })
             },
             include: { category: true }
         });
@@ -35,7 +41,7 @@ const getPackages = async (req, res) => {
 const getPackage = async (req, res) => {
     try {
         const data = await prisma.package.findUnique({
-            where: { id: req.params.id },
+            where: { id: Number(req.params.id) },
             include: { category: true }
         });
 
@@ -48,9 +54,15 @@ const getPackage = async (req, res) => {
 // UPDATE
 const updatePackage = async (req, res) => {
     try {
+        const { categoryId, price, carPrices, ...rest } = req.body;
+        const updateData = { ...rest };
+        if (categoryId) updateData.categoryId = Number(categoryId);
+        if (price) updateData.price = Number(price);
+        if (carPrices) updateData.carPrices = carPrices;
+
         const data = await prisma.package.update({
-            where: { id: req.params.id },
-            data: req.body
+            where: { id: Number(req.params.id) },
+            data: updateData
         });
 
         res.json(data);
@@ -59,15 +71,15 @@ const updatePackage = async (req, res) => {
     }
 };
 
-// DELETE (soft)
+// DELETE
 const deletePackage = async (req, res) => {
     try {
         await prisma.package.update({
-            where: { id: req.params.id },
+            where: { id: Number(req.params.id) },
             data: { isActive: false }
         });
 
-        res.json({ message: "Package deleted" });
+        res.json({ message: "Package deactivated (soft-deleted)" });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

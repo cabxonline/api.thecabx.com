@@ -21,7 +21,7 @@ exports.createCar = async (req, res) => {
       data: {
         model,
         plateNumber,
-        categoryId
+        categoryId: Number(categoryId)
       },
       include: {
         category: true
@@ -93,7 +93,7 @@ exports.getCarById = async (req, res) => {
     const { id } = req.params
 
     const car = await prisma.car.findUnique({
-      where: { id },
+      where: { id: Number(id) },
       include: {
         category: true,
         driver: true
@@ -134,10 +134,13 @@ exports.updateCar = async (req, res) => {
   try {
 
     const { id } = req.params
+    const { categoryId, ...updateData } = req.body
+    
+    if (categoryId) updateData.categoryId = Number(categoryId)
 
     const car = await prisma.car.update({
-      where: { id },
-      data: req.body
+      where: { id: Number(id) },
+      data: updateData
     })
 
     res.json({
@@ -169,7 +172,7 @@ exports.deleteCar = async (req, res) => {
     const { id } = req.params
 
     await prisma.car.delete({
-      where: { id }
+      where: { id: Number(id) }
     })
 
     res.json({
@@ -195,7 +198,7 @@ exports.confirmCar = async (req, res) => {
     const { carId, from, to, tripType } = req.body
 
     const car = await prisma.carCategory.findUnique({
-      where: { id: carId }
+      where: { id: Number(carId) }
     })
 
     if (!car) {

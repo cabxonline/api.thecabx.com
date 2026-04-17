@@ -41,16 +41,6 @@ router.delete(
   driverController.deleteDriver
 )
 
-router.post(
-  "/location/update",
-  auth,
-  driverController.updateLocation
-)
-
-router.get(
-  "/nearby",
-  auth,
-  driverController.getNearbyDrivers
-)
+// Location features removed from schema
 
 module.exports = router

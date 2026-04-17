@@ -1,26 +1,89 @@
 const prisma = require("../utils/prisma")
 const { sendMailTemplate, sendWhatsappMsg } = require("../utils/notification")
 
+const generateBookingNumber = () => `CBX-${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100)}`
+
 /*
 CREATE BOOKING
 POST /bookings
 */
+
 exports.createBooking = async (req, res) => {
+  const startTime = Date.now()
+
   try {
-    const { userId, carCategoryId, pickupAddress, dropAddress } = req.body
+    console.log("🚀 [BOOKING API HIT]");
+
+    // 🔍 Request log
+    console.log("📥 Request Body:", req.body)
+
+    const {
+      userId,
+      carCategoryId,
+      pickupAddress,
+      dropAddress,
+      guestName,
+      gender,
+      mobileNumber,
+      corporateName,
+      hub,
+      fare,
+      pickupTime,
+      tytRate,
+      multiplyBy,
+      grandTotal
+    } = req.body
+
+    // 🔥 Validation log
+    if (!userId || !carCategoryId) {
+      console.warn("⚠️ Missing required fields", { userId, carCategoryId })
+      return res.status(400).json({
+        message: "userId and carCategoryId are required"
+      })
+    }
+
+    const bookingData = {
+      bookingNumber: generateBookingNumber(),
+      userId: Number(userId),
+      carCategoryId: Number(carCategoryId),
+      pickupAddress,
+      dropAddress,
+      guestName,
+      gender,
+      mobileNumber: mobileNumber || "9999999999",
+      corporateName,
+      hub,
+      grandTotal: grandTotal ? Number(grandTotal) : null,
+      fare: fare ? Number(fare) : null,
+      pickupTime,
+      tytRate: tytRate ? Number(tytRate) : null,
+      multiplyBy: multiplyBy ? Number(multiplyBy) : 1,
+      status: hub ? "dispatched" : "new_booking"
+    }
+
+    console.log("🧠 Final Booking Data:", bookingData)
+
+    // 💾 DB Insert
     const booking = await prisma.booking.create({
-      data: {
-        userId,
-        carCategoryId,
-        pickupAddress,
-        dropAddress,
-        status: "pending"
-      }
+      data: bookingData
     })
-    res.json(booking)
+
+    console.log("✅ Booking Created:", booking)
+    console.log(`⏱️ Time Taken: ${Date.now() - startTime}ms`)
+
+    return res.json(booking)
+
   } catch (err) {
-    console.error(err)
-    res.status(500).json({ message: "Failed to create booking" })
+    console.error("❌ Booking Error:", {
+      message: err.message,
+      stack: err.stack,
+      body: req.body
+    })
+
+    return res.status(500).json({
+      message: "Failed to create booking",
+      error: err.message
+    })
   }
 }
 
@@ -33,13 +96,13 @@ exports.getBookings = async (req, res) => {
   try {
     const { userId } = req.query
     const bookings = await prisma.booking.findMany({
-      where: userId ? { userId } : {},
+      where: userId ? { userId: Number(userId) } : {},
       include: {
         user: true,
         carCategory: true,
-        driver: true,
-        payments: true,
-        trip: true
+        driver: { include: { car: true } },
+        car: true,
+        payments: true
       },
       orderBy: { createdAt: "desc" }
     })
@@ -58,14 +121,14 @@ exports.getBooking = async (req, res) => {
   try {
     const { id } = req.params
     const booking = await prisma.booking.findUnique({
-      where: { id },
+      where: { id: Number(id) },
       include: {
         user: true,
         carCategory: true,
-        driver: true,
+        driver: { include: { car: true } },
+        car: true,
         payments: true,
-        trip: true,
-        logs: { 
+        logs: {
           orderBy: { createdAt: "desc" }
         }
       }
@@ -87,27 +150,112 @@ PATCH /bookings/:id
 exports.updateBooking = async (req, res) => {
   try {
     const { id } = req.params
+    const { adminName, ...updateData } = req.body
+
     const oldBooking = await prisma.booking.findUnique({
-      where: { id },
+      where: { id: Number(id) },
       include: { driver: true }
     })
+
+    // Convert foreign keys to numbers if they exist in updateData
+    if (updateData.driverId) updateData.driverId = Number(updateData.driverId)
+    if (updateData.carId) updateData.carId = Number(updateData.carId)
+    if (updateData.userId) updateData.userId = Number(updateData.userId)
+    if (updateData.carCategoryId) updateData.carCategoryId = Number(updateData.carCategoryId)
+
     const booking = await prisma.booking.update({
-      where: { id },
-      data: req.body
+      where: { id: Number(id) },
+      data: updateData
     })
-    // Activity Logging for Dispatch & Reassignment
-    if (req.body.driverId && oldBooking?.driverId !== req.body.driverId) {
-      const newDriver = await prisma.driver.findUnique({ where: { id: req.body.driverId } })
+
+    // Activity Logging for Status Changes
+    if (updateData.status && oldBooking?.status !== updateData.status) {
+      await prisma.bookingLog.create({
+        data: {
+          bookingId: booking.id,
+          action: "STATUS_CHANGE",
+          message: `Administrative Action: ${adminName || "Admin"} updated ticket status from '${oldBooking.status?.replace("_", " ")}' to '${updateData.status?.replace("_", " ")}'`
+        }
+      })
+    }
+
+    // Activity Logging for Financial Changes (Extra KM / Tolls)
+    if (updateData.extraKmCost !== undefined && Number(oldBooking?.extraKmCost) !== Number(updateData.extraKmCost)) {
+      await prisma.bookingLog.create({
+        data: {
+          bookingId: booking.id,
+          action: "FINANCIAL_UPDATE",
+          message: `Financial Audit: ${adminName || "Admin"} logged Extra KM charges of ₹${updateData.extraKmCost}`
+        }
+      })
+    }
+    if (updateData.tollsCost !== undefined && Number(oldBooking?.tollsCost) !== Number(updateData.tollsCost)) {
+      await prisma.bookingLog.create({
+        data: {
+          bookingId: booking.id,
+          action: "FINANCIAL_UPDATE",
+          message: `Financial Audit: ${adminName || "Admin"} logged Tolls/Permit charges of ₹${updateData.tollsCost}`
+        }
+      })
+    }
+
+    // Activity Logging for Distance-Based Billing
+    if (updateData.totalKm !== undefined && Number(oldBooking?.totalKm) !== Number(updateData.totalKm)) {
+      await prisma.bookingLog.create({
+        data: {
+          bookingId: booking.id,
+          action: "FINANCIAL_UPDATE",
+          message: `Distance Audit: ${adminName || "Admin"} logged Total Distance as ${updateData.totalKm} KM`
+        }
+      })
+    }
+    if (updateData.costPerKm !== undefined && Number(oldBooking?.costPerKm) !== Number(updateData.costPerKm)) {
+      await prisma.bookingLog.create({
+        data: {
+          bookingId: booking.id,
+          action: "FINANCIAL_UPDATE",
+          message: `Distance Audit: ${adminName || "Admin"} set rate to ₹${updateData.costPerKm}/KM`
+        }
+      })
+    }
+
+    if (updateData.driverId && oldBooking?.driverId !== updateData.driverId) {
+      const newDriver = await prisma.driver.findUnique({
+        where: { id: Number(updateData.driverId) },
+        include: { car: true }
+      })
       const action = oldBooking.driverId ? "REASSIGN" : "DISPATCH"
-      const message = oldBooking.driverId 
-        ? `Operative swapped from ${oldBooking.driver?.name} to ${newDriver?.name}`
-        : `Fleet Operative ${newDriver?.name} assigned to ticket.`
-        
+
+      // If no carId is explicitly provided, we assume the driver's default car
+      const targetCarId = updateData.carId ? Number(updateData.carId) : newDriver?.carId
+
+      await prisma.booking.update({
+        where: { id: booking.id },
+        data: { carId: targetCarId }
+      })
+
+      const targetCar = await prisma.car.findUnique({ where: { id: Number(targetCarId) } })
+
+      const message = oldBooking.driverId
+        ? `Personnel Swapped: ${newDriver?.name} assigned with ${targetCar?.model} (${targetCar?.plateNumber})`
+        : `Fleet Deployed: ${newDriver?.name} assigned to ticket with ${targetCar?.model} (${targetCar?.plateNumber})`
+
       await prisma.bookingLog.create({
         data: {
           bookingId: booking.id,
           action,
           message
+        }
+      })
+    }
+
+    if (updateData.carId && oldBooking?.carId !== updateData.carId && !updateData.driverId) {
+      const targetCar = await prisma.car.findUnique({ where: { id: Number(updateData.carId) } })
+      await prisma.bookingLog.create({
+        data: {
+          bookingId: booking.id,
+          action: "TECHNICAL_UPDATE",
+          message: `Vehicle Updated: Assigned unit changed to ${targetCar?.model} (${targetCar?.plateNumber})`
         }
       })
     }
@@ -126,38 +274,50 @@ exports.resolveCashPayment = async (req, res) => {
   try {
     const { id } = req.params
     const booking = await prisma.booking.findUnique({
-      where: { id },
+      where: { id: Number(id) },
       include: { payments: true }
     })
     if (!booking) return res.status(404).json({ message: "Booking not found" })
-    
+
     const amountPaid = booking.payments
       .filter(p => p.status === "paid")
       .reduce((sum, p) => sum + p.amount, 0)
-    const pendingDues = booking.fare - amountPaid
-    
-    if (pendingDues <= 0) {
-      return res.status(400).json({ message: "No pending dues on this ticket" })
+    const totalFare = (booking.fare || 0) + (booking.extraKmCost || 0) + (booking.tollsCost || 0)
+    const { amount } = req.body
+    const collectionAmount = amount ? Number(amount) : pendingDues
+
+    if (collectionAmount <= 0) {
+      return res.status(400).json({ message: "Collection amount must be positive" })
     }
-    
+
     const payment = await prisma.payment.create({
       data: {
         bookingId: booking.id,
-        amount: pendingDues,
+        amount: collectionAmount,
         status: "paid",
-        provider: "cash"
+        provider: "cash",
+        method: "cash"
       }
     })
-    
+
+    // Determine new payment status
+    const remainingAfterThis = pendingDues - collectionAmount
+    const newStatus = remainingAfterThis <= 0 ? "paid" : "partial"
+
+    await prisma.booking.update({
+      where: { id: booking.id },
+      data: { paymentStatus: newStatus }
+    })
+
     await prisma.bookingLog.create({
       data: {
         bookingId: booking.id,
         action: "PAYMENT_CASH",
-        message: `Admin registered cash collection of ₹${pendingDues.toFixed(2)}`
+        message: `Admin registered cash collection of ₹${collectionAmount.toFixed(2)} (${newStatus})`
       }
     })
-    
-    res.json({ message: "Cash successfully collected by Driver", payment })
+
+    res.json({ message: `Cash collection of ₹${collectionAmount} logged successfully`, payment })
   } catch (err) {
     console.error("Cash Resolve Error:", err)
     res.status(500).json({ message: "Error processing cash collection" })
@@ -172,20 +332,21 @@ exports.sendPaymentLink = async (req, res) => {
   try {
     const { id } = req.params
     const booking = await prisma.booking.findUnique({
-      where: { id },
+      where: { id: Number(id) },
       include: { payments: true, user: true }
     })
     if (!booking) return res.status(404).json({ message: "Booking not found" })
-    
+
     const amountPaid = booking.payments
       .filter(p => p.status === "paid")
       .reduce((sum, p) => sum + p.amount, 0)
-    const pendingDues = booking.fare - amountPaid
-    
+    const totalFare = (booking.fare || 0) + (booking.extraKmCost || 0) + (booking.tollsCost || 0)
+    const pendingDues = totalFare - amountPaid
+
     if (pendingDues <= 0) {
       return res.status(400).json({ message: "No pending dues to invoice" })
     }
-    
+
     await prisma.bookingLog.create({
       data: {
         bookingId: booking.id,
@@ -208,14 +369,14 @@ exports.rescheduleBooking = async (req, res) => {
   try {
     const { id } = req.params
     const { scheduledDate } = req.body
-    
+
     if (!scheduledDate) {
       return res.status(400).json({ message: "Valid datetime string is required." })
     }
 
     const booking = await prisma.booking.update({
-      where: { id },
-      data: { 
+      where: { id: Number(id) },
+      data: {
         scheduledAt: new Date(scheduledDate),
         status: "pending" // Always reset status to pending when rescheduled
       },
@@ -233,9 +394,9 @@ exports.rescheduleBooking = async (req, res) => {
 
     // Notification Service Execution
     if (booking.user) {
-      const notifyData = { 
-        name: booking.user.name, 
-        date: new Date(scheduledDate).toLocaleString() 
+      const notifyData = {
+        name: booking.user.name,
+        date: new Date(scheduledDate).toLocaleString()
       }
       if (booking.user.email) await sendMailTemplate("booking_rescheduled", booking.user.email, notifyData)
       if (booking.user.phone) await sendWhatsappMsg(booking.user.phone, "booking_rescheduled", [booking.user.name, notifyData.date])
@@ -257,8 +418,8 @@ exports.cancelBooking = async (req, res) => {
     const { id } = req.params
 
     const booking = await prisma.booking.update({
-      where: { id },
-      data: { 
+      where: { id: Number(id) },
+      data: {
         status: "cancelled",
         driverId: null // Sever driver assignment
       },
@@ -295,7 +456,7 @@ exports.deleteBooking = async (req, res) => {
   try {
     const { id } = req.params
     await prisma.booking.delete({
-      where: { id }
+      where: { id: Number(id) }
     })
     res.json({ message: "Booking deleted successfully" })
   } catch (err) {
@@ -310,14 +471,13 @@ GET /bookings/my
 */
 exports.myBookings = async (req, res) => {
   try {
-    const userId = req.user.id
+    const userId = Number(req.user.id)
     const bookings = await prisma.booking.findMany({
       where: { userId },
       include: {
         carCategory: true,
         payments: true,
-        driver: true,
-        trip: true
+        driver: true
       },
       orderBy: {
         createdAt: "desc"

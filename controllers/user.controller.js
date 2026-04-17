@@ -24,7 +24,7 @@ exports.createUser = async (req, res) => {
         email,
         phone,
         password: hash,
-        roleId,
+        roleId: Number(roleId),
         isActive: true
       },
       include: { role: true }
@@ -70,7 +70,7 @@ exports.getUser = async (req, res) => {
   try {
     const { id } = req.params
     const user = await prisma.user.findUnique({
-      where: { id },
+      where: { id: Number(id) },
       include: { role: true }
     })
     if (!user) return res.status(404).json({ error: "User not found" })
@@ -86,7 +86,7 @@ exports.updateUser = async (req, res) => {
     const { id } = req.params
     const { name, email, phone, roleId, isActive, password } = req.body
 
-    const updateData = { name, email, phone, roleId, isActive }
+    const updateData = { name, email, phone, roleId: Number(roleId), isActive }
 
     // If password is being updated
     if (password && password.trim() !== "") {
@@ -94,7 +94,7 @@ exports.updateUser = async (req, res) => {
     }
 
     const user = await prisma.user.update({
-      where: { id },
+      where: { id: Number(id) },
       data: updateData
     })
 
@@ -108,7 +108,7 @@ exports.updateUser = async (req, res) => {
 exports.deleteUser = async (req, res) => {
   try {
     const { id } = req.params
-    await prisma.user.delete({ where: { id } })
+    await prisma.user.delete({ where: { id: Number(id) } })
     res.json({ message: "User purged from records" })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -119,11 +119,11 @@ exports.deleteUser = async (req, res) => {
 exports.toggleStatus = async (req, res) => {
   try {
     const { id } = req.params
-    const user = await prisma.user.findUnique({ where: { id } })
+    const user = await prisma.user.findUnique({ where: { id: Number(id) } })
     if (!user) return res.status(404).json({ error: "User not found" })
 
     const updated = await prisma.user.update({
-      where: { id },
+      where: { id: Number(id) },
       data: { isActive: !user.isActive }
     })
     res.json(updated)

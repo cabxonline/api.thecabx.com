@@ -12,7 +12,7 @@ exports.createDriver = async (req,res)=>{
       data:{
         name,
         phone,
-        carId,
+        carId: Number(carId),
         status:"offline"
       },
       include:{
@@ -69,7 +69,7 @@ exports.getDriver = async (req,res)=>{
     const { id } = req.params
 
     const driver = await prisma.driver.findUnique({
-      where:{ id },
+      where:{ id: Number(id) },
       include:{
         car:true,
         bookings:true
@@ -96,10 +96,13 @@ exports.updateDriver = async (req,res)=>{
   try{
 
     const { id } = req.params
+    const { carId, ...updateData } = req.body
+    
+    if (carId) updateData.carId = Number(carId)
 
     const driver = await prisma.driver.update({
-      where:{ id },
-      data:req.body
+      where:{ id: Number(id) },
+      data: updateData
     })
 
     res.json(driver)
@@ -120,7 +123,7 @@ exports.deleteDriver = async (req,res)=>{
     const { id } = req.params
 
     await prisma.driver.delete({
-      where:{ id }
+      where:{ id: Number(id) }
     })
 
     res.json({message:"Driver deleted successfully"})
@@ -132,34 +135,7 @@ exports.deleteDriver = async (req,res)=>{
 }
 
 
-/*
-UPDATE DRIVER LOCATION
-*/
-exports.updateLocation = async (req,res)=>{
-
-  try{
-
-    const { driverId, lat, lng } = req.body
-
-    await prisma.driver.update({
-      where:{ id: driverId },
-      data:{
-        lat: parseFloat(lat),
-        lng: parseFloat(lng),
-        status:"online"
-      }
-    })
-
-    res.json({
-      message:"Location updated successfully"
-    })
-
-  }catch(err){
-    console.error(err)
-    res.status(500).json({message:"Location update failed"})
-  }
-
-}
+// Location features removed
 
 
 /*

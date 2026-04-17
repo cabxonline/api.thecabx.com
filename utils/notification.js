@@ -3,36 +3,43 @@ const nodemailer = require('nodemailer')
 
 async function sendMailTemplate(keyOrId, to, data = {}) {
   try {
-    // 1. Fetch template
-    const template = await prisma.mailTemplate.findFirst({
-      where: {
-        OR: [
-          { key: keyOrId },
-          { id: keyOrId }
-        ],
-        isActive: true
+    // Hardcoded templates since MailTemplate model is removed
+    const templates = {
+      "booking_confirmation": {
+        subject: "Booking Confirmed - Travel with CabX",
+        body: `Hello {{name}}, your booking is confirmed. Your unique booking ID is {{booking_number}}.`
+      },
+      "booking_rescheduled": {
+        subject: "Travel Alert: Booking Rescheduled",
+        body: `Hello {{name}}, your travel schedule has been updated to {{date}}.`
+      },
+      "booking_cancelled": {
+        subject: "Notice: Booking Cancellation",
+        body: `Hello {{name}}, your booking has been formally cancelled as requested.`
       }
-    })
+    }
+
+    const template = templates[keyOrId]
 
     if (!template) {
-      console.warn(`Mail template not found or inactive: ${keyOrId}`)
+      console.warn(`Local template not found: ${keyOrId}`)
       return false
     }
 
-    // 2. Common dynamic values
+    // Common dynamic values
     data.app_name = data.app_name || process.env.APP_NAME || "CabX"
     data.time = data.time || new Date().toLocaleString()
 
-    // 3. Subject rendering
+    // Subject rendering
     let subject = template.subject
     for (const [k, v] of Object.entries(data)) {
-      subject = subject.replace(new RegExp(`{{\\s*${k}\\s*}}`, 'g'), v)
+      subject = subject.replace(new RegExp(`{{\\s*${k}\\s*}}`, 'g'), String(v))
     }
 
-    // 4. Body rendering 
+    // Body rendering 
     let renderedBody = template.body
     for (const [k, v] of Object.entries(data)) {
-      renderedBody = renderedBody.replace(new RegExp(`{{\\s*${k}\\s*}}`, 'g'), v)
+      renderedBody = renderedBody.replace(new RegExp(`{{\\s*${k}\\s*}}`, 'g'), String(v))
     }
 
     // 5. Wrap in HTML

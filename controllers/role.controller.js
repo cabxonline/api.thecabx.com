@@ -37,7 +37,7 @@ exports.getRole = async (req, res) => {
   try {
     const { id } = req.params
     const role = await prisma.role.findUnique({
-      where: { id },
+      where: { id: Number(id) },
       include: {
         permissions: {
           include: { permission: true }
@@ -57,7 +57,7 @@ exports.updateRole = async (req, res) => {
     const { id } = req.params
     const { name } = req.body
     const role = await prisma.role.update({
-      where: { id },
+      where: { id: Number(id) },
       data: { name }
     })
     res.json(role)
@@ -71,12 +71,12 @@ exports.deleteRole = async (req, res) => {
   try {
     const { id } = req.params
     // Check if role has users
-    const userCount = await prisma.user.count({ where: { roleId: id } })
+    const userCount = await prisma.user.count({ where: { roleId: Number(id) } })
     if (userCount > 0) {
       return res.status(400).json({ error: "Cannot delete role with active users attached" })
     }
 
-    await prisma.role.delete({ where: { id } })
+    await prisma.role.delete({ where: { id: Number(id) } })
     res.json({ message: "Role decommissioned" })
   } catch (err) {
     res.status(500).json({ error: err.message })
@@ -93,13 +93,15 @@ exports.assignPermissionsBulk = async (req, res) => {
       return res.status(400).json({ error: "Permissions must be an array" })
     }
 
+    const nRoleId = Number(roleId)
+
     // Transactionally sync permissions: Delete all existing and create new ones
     await prisma.$transaction([
-      prisma.rolePermission.deleteMany({ where: { roleId } }),
+      prisma.rolePermission.deleteMany({ where: { roleId: nRoleId } }),
       prisma.rolePermission.createMany({
         data: permissions.map(pId => ({
-          roleId,
-          permissionId: pId
+          roleId: nRoleId,
+          permissionId: Number(pId)
         })),
         skipDuplicates: true
       })
@@ -113,13 +115,13 @@ exports.assignPermissionsBulk = async (req, res) => {
 }
 
 /* 
-LEGACY ENDPOINTS (kept for backward compatibility if needed by old UI components)
+LEGACY ENDPOINTS 
 */
 exports.getRolePermissions = async (req, res) => {
   try {
     const { roleId } = req.params
     const role = await prisma.role.findUnique({
-      where: { id: roleId },
+      where: { id: Number(roleId) },
       include: { permissions: { include: { permission: true } } }
     })
     res.json(role.permissions)
@@ -133,7 +135,10 @@ exports.assignPermission = async (req, res) => {
     const { roleId } = req.params
     const { permissionId } = req.body
     const data = await prisma.rolePermission.create({
-      data: { roleId, permissionId }
+      data: { 
+        roleId: Number(roleId), 
+        permissionId: Number(permissionId) 
+      }
     })
     res.json(data)
   } catch (err) {
@@ -144,7 +149,12 @@ exports.assignPermission = async (req, res) => {
 exports.removePermission = async (req, res) => {
   try {
     const { roleId, permissionId } = req.params
-    await prisma.rolePermission.deleteMany({ where: { roleId, permissionId } })
+    await prisma.rolePermission.deleteMany({ 
+      where: { 
+        roleId: Number(roleId), 
+        permissionId: Number(permissionId) 
+      } 
+    })
     res.json({ message: "Permission revoked" })
   } catch (err) {
     res.status(500).json({ error: err.message })

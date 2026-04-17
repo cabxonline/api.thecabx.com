@@ -1,170 +1,85 @@
 require("dotenv").config()
-
 const { PrismaClient } = require("@prisma/client")
 const bcrypt = require("bcrypt")
 
-const prisma = new PrismaClient({
-  datasources: {
-    db: {
-      url: process.env.DATABASE_URL
-    }
-  }
-})
+const prisma = new PrismaClient()
 
 async function main() {
+  const password = await bcrypt.hash("admin123", 10)
 
-  const password = await bcrypt.hash("123456", 10)
+  console.log("Seeding core roles...")
+  const roles = ["SUPERADMIN", "ADMIN", "MANAGER", "USER", "DRIVER"]
+  for (const roleName of roles) {
+    await prisma.role.upsert({
+      where: { name: roleName },
+      update: {},
+      create: { name: roleName }
+    })
+  }
 
-  /* -----------------------
-     PERMISSIONS
-  ----------------------- */
+  const superAdminRole = await prisma.role.findUnique({ where: { name: "SUPERADMIN" } })
 
+  console.log("Seeding default SuperAdmin...")
+  await prisma.user.upsert({
+    where: { email: "admin@thecabx.com" },
+    update: {},
+    create: {
+      name: "CabX Admin",
+      email: "admin@thecabx.com",
+      password,
+      roleId: superAdminRole.id
+    }
+  })
+
+  console.log("Seeding permissions...")
   const permissions = [
-    { key: "dashboard.view", name: "View Dashboard" },
-    { key: "users.view", name: "View Users" },
-    { key: "users.create", name: "Create Users" },
-    { key: "users.update", name: "Update Users" },
-    { key: "users.delete", name: "Delete Users" },
-
-    { key: "roles.view", name: "View Roles" },
-    { key: "roles.create", name: "Create Roles" },
-
-    { key: "bookings.view", name: "View Bookings" },
-    { key: "bookings.create", name: "Create Bookings" }
+    { key: "booking.read", name: "View Bookings" },
+    { key: "booking.create", name: "Create Bookings" },
+    { key: "booking.update", name: "Update Bookings" },
+    { key: "booking.delete", name: "Delete Bookings" },
+    { key: "driver.read", name: "View Drivers" },
+    { key: "driver.create", name: "Create Drivers" },
+    { key: "driver.update", name: "Update Drivers" },
+    { key: "driver.delete", name: "Delete Drivers" },
+    { key: "car.read", name: "View Cars" },
+    { key: "car.create", name: "Create Cars" },
+    { key: "car.update", name: "Update Cars" },
+    { key: "car.delete", name: "Delete Cars" },
+    { key: "role.read", name: "View Roles" },
+    { key: "role.create", name: "Create Roles" },
+    { key: "role.update", name: "Update Roles" },
+    { key: "role.delete", name: "Delete Roles" }
   ]
 
-  await prisma.permission.createMany({
-    data: permissions,
-    skipDuplicates: true
-  })
+  for (const p of permissions) {
+    await prisma.permission.upsert({
+      where: { key: p.key },
+      update: { name: p.name },
+      create: p
+    })
+  }
 
-  /* -----------------------
-     ROLES
-  ----------------------- */
-
-  const superAdmin = await prisma.role.upsert({
-    where: { name: "Super Admin" },
-    update: {},
-    create: { name: "Super Admin" }
-  })
-
-  const admin = await prisma.role.upsert({
-    where: { name: "Admin" },
-    update: {},
-    create: { name: "Admin" }
-  })
-
-  const manager = await prisma.role.upsert({
-    where: { name: "Manager" },
-    update: {},
-    create: { name: "Manager" }
-  })
-
-  const userRole = await prisma.role.upsert({
-    where: { name: "User" },
-    update: {},
-    create: { name: "User" }
-  })
-
-  /* -----------------------
-     FETCH PERMISSIONS
-  ----------------------- */
-
-  const allPermissions = await prisma.permission.findMany()
-
-  /* -----------------------
-     SUPER ADMIN → ALL
-  ----------------------- */
-
+  const allPerms = await prisma.permission.findMany()
+  console.log("Assigning all permissions to SUPERADMIN...")
+  
+  // Clean up old assignments if any (for idempotency)
+  await prisma.rolePermission.deleteMany({ where: { roleId: superAdminRole.id } })
+  
   await prisma.rolePermission.createMany({
-    data: allPermissions.map(p => ({
-      role_id: superAdmin.id,
-      permission_id: p.id
+    data: allPerms.map(p => ({
+      roleId: superAdminRole.id,
+      permissionId: p.id
     })),
     skipDuplicates: true
   })
 
-  /* -----------------------
-     ADMIN PERMISSIONS
-  ----------------------- */
-
-  const adminPermissions = allPermissions.filter(
-    p => p.key !== "roles.create"
-  )
-
-  await prisma.rolePermission.createMany({
-    data: adminPermissions.map(p => ({
-      role_id: admin.id,
-      permission_id: p.id
-    })),
-    skipDuplicates: true
-  })
-
-  /* -----------------------
-     MANAGER PERMISSIONS
-  ----------------------- */
-
-  const managerPermissions = allPermissions.filter(p =>
-    ["dashboard.view", "bookings.view", "bookings.create"].includes(p.key)
-  )
-
-  await prisma.rolePermission.createMany({
-    data: managerPermissions.map(p => ({
-      role_id: manager.id,
-      permission_id: p.id
-    })),
-    skipDuplicates: true
-  })
-
-  /* -----------------------
-     TEAM
-  ----------------------- */
-
-  const team = await prisma.team.upsert({
-    where: { name: "Cruise Saga HQ" },
-    update: {},
-    create: { name: "Cruise Saga HQ" }
-  })
-
-  /* -----------------------
-     USER
-  ----------------------- */
-
-  const user = await prisma.user.upsert({
-    where: { email: "admin@cruisesaga.com" },
-    update: {},
-    create: {
-      name: "Super Admin",
-      email: "admin@cruisesaga.com",
-      password
-    }
-  })
-
-  /* -----------------------
-     TEAM USER ROLE
-  ----------------------- */
-
-  await prisma.teamUser.upsert({
-    where: {
-      user_id_team_id: {
-        user_id: user.id,
-        team_id: team.id
-      }
-    },
-    update: {},
-    create: {
-      user_id: user.id,
-      team_id: team.id,
-      role_id: superAdmin.id
-    }
-  })
-
-  console.log("RBAC seed completed")
+  console.log("\x1b[32m%s\x1b[0m", "✅ Seeding successful!")
 }
 
 main()
-  .catch(e => {
+  .catch((e) => {
     console.error(e)
+    process.exit(1)
   })
   .finally(async () => {
     await prisma.$disconnect()

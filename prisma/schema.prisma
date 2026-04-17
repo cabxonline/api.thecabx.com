@@ -3,42 +3,40 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
 model User {
-  id       String  @id @default(uuid())
+  id Int @id @default(autoincrement())
   name     String
   email    String  @unique
   phone    String?
   password String
 
-  roleId String
+  roleId Int
   role   Role   @relation(fields: [roleId], references: [id])
-
-  offerRedemptions OfferRedemption[]
 
   bookings Booking[]
 
   isActive Boolean @default(true)
 
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@index([roleId])
 }
 
 model Role {
-  id   String @id @default(uuid())
+  id Int @id @default(autoincrement())
   name String @unique
 
-  users       User[]
-  permissions RolePermission[]
-
-  createdAt DateTime @default(now())
+  users User[]
+   permissions RolePermission[]   // 🔥 ADD THIS
 }
 
 model Permission {
-  id   String @id @default(uuid())
+  id   Int @id @default(autoincrement())
   key  String @unique
   name String
 
@@ -46,10 +44,10 @@ model Permission {
 }
 
 model RolePermission {
-  id String @id @default(uuid())
+  id Int @id @default(autoincrement())
 
-  roleId       String
-  permissionId String
+  roleId       Int
+  permissionId Int
 
   role       Role       @relation(fields: [roleId], references: [id])
   permission Permission @relation(fields: [permissionId], references: [id])
@@ -57,267 +55,199 @@ model RolePermission {
   @@unique([roleId, permissionId])
 }
 
-model MailTemplate {
-  id        String   @id @default(uuid())
-  key       String   @unique
-  name      String
-  subject   String
-  body      String
-  isActive  Boolean  @default(true)
-}
-
-model City {
-  id        String   @id @default(uuid())
-  name      String
-  state     String
-  image     String   // ✅ ADD THIS
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-}
 model CarCategory {
-  id       String @id @default(uuid())
+  id Int @id @default(autoincrement())
   name     String
   capacity Int
-  baseFare Float
-  perKm    Float
 
   cars     Car[]
   bookings Booking[]
+  manualPricing ManualPricing[]
+  packageEnquiries PackageEnquiry[]
 
-  manualPricing ManualPricing[]   // ✅ ADD THIS
-
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 }
 
 model Car {
-  id          String @id @default(uuid())
+  id Int @id @default(autoincrement())
   model       String
   plateNumber String @unique
 
-  categoryId String
-  category   CarCategory @relation(fields: [categoryId], references: [id])
+  categoryId Int
+  category   CarCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
 
   driver Driver?
+  bookings Booking[]
+
+  @@index([categoryId])
 }
 
 model Driver {
-  id    String @id @default(uuid())
+  id Int @id @default(autoincrement())
   name  String
   phone String
 
-  carId String @unique
-  car   Car    @relation(fields: [carId], references: [id])
+  carId Int @unique
+  car   Car @relation(fields: [carId], references: [id], onDelete: Cascade)
 
-  lat    Float?
-  lng    Float?
   status String @default("offline")
 
   bookings Booking[]
 }
 
 model Booking {
-  id            String  @id @default(uuid())
-  userId        String
-  carCategoryId String
-  driverId      String?
+  id Int @id @default(autoincrement())
+  bookingNumber String  @unique
+
+  userId        Int
+  carCategoryId Int
+  driverId      Int?
+  carId         Int?
+
+  guestName     String?
+  gender        String?
+  email         String?
+  mobileNumber  String
+  corporateName String?
 
   pickupAddress String
   dropAddress   String
+  exactPickupAddress String?
+  exactDropAddress   String?
 
-  status String @default("pending")
-  fare   Float?
+  status        String @default("new_booking")
+  hub           String?
+  allotedTo     String?
+  carDispatched Boolean @default(false)
+
+  fare        Float?
+  grandTotal  Float?
+  totalKm     Float @default(0)
+  costPerKm   Float @default(0)
+  extraKmCost Float @default(0)
+  tollsCost   Float @default(0)
 
   scheduledAt DateTime?
+  pickupTime  String?
+  paymentStatus String @default("pending")
+  tytRate       Float?
+  multiplyBy    Float @default(1)
   createdAt   DateTime @default(now())
 
-  user        User        @relation(fields: [userId], references: [id])
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   carCategory CarCategory @relation(fields: [carCategoryId], references: [id])
   driver      Driver?     @relation(fields: [driverId], references: [id])
+  car         Car?        @relation(fields: [carId], references: [id])
 
-  trip     Trip?
   payments Payment[]
-  logs     BookingLog[] // ✅ ADD THIS
+  logs     BookingLog[]
 
   @@index([userId])
   @@index([driverId])
-}
-
-model Trip {
-  id        String @id @default(uuid())
-  bookingId String @unique
-
-  startTime DateTime?
-  endTime   DateTime?
-
-  booking Booking @relation(fields: [bookingId], references: [id])
+  @@index([bookingNumber])
 }
 
 model Payment {
-  id        String @id @default(uuid())
-  bookingId String
+  id Int @id @default(autoincrement())
+  bookingId Int
   amount    Float
   status    String
   provider  String
+  transactionId String?
 
   createdAt DateTime @default(now())
 
-  booking Booking @relation(fields: [bookingId], references: [id])
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
   @@index([bookingId])
-}
-
-model Offer {
-  id          String  @id @default(uuid())
-  title       String
-  description String?
-  code        String  @unique
-  discount    Float
-
-  type        String // "flat" or "percent"
-  maxDiscount Float?
-
-  minAmount Float? // minimum booking value
-
-  usageLimit Int? // total usage limit
-  usedCount  Int  @default(0)
-
-  isActive Boolean @default(true)
-
-  expiresAt DateTime?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  redemptions OfferRedemption[]
-}
-
-model OfferRedemption {
-  id String @id @default(uuid())
-
-  offerId String
-  userId  String
-
-  usedAt DateTime @default(now())
-
-  offer Offer @relation(fields: [offerId], references: [id])
-  user  User  @relation(fields: [userId], references: [id])
-
-  @@unique([offerId, userId]) // one user = one use
 }
 
 model PackageCategory {
-  id        String   @id @default(uuid())
-  name      String
-  image     String?        // category banner/icon
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id Int @id @default(autoincrement())
+  name String
 
-  packages  Package[]
+  isActive  Boolean @default(true)
+  image     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+  packages Package[]
 }
 
 model Package {
-  id          String   @id @default(uuid())
-  title       String
-  images      String[]     // multiple images (IMPORTANT)
-  price       Float
-  duration    String
-  features    String[]
-  tag         String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id Int @id @default(autoincrement())
+  title    String
+  images   Json
+  price    Float
+  carPrices Json?
+  duration String
+  features Json
 
-  categoryId  String?
-  category    PackageCategory? @relation(fields: [categoryId], references: [id])
-  enquiries   PackageEnquiry[]
-}
+  tag      String?
+  isActive Boolean @default(true)
 
-model BlogCategory {
-  id        String   @id @default(uuid())
-  name      String   @unique
-  blogs     Blog[]
+  categoryId Int?
+  category   PackageCategory? @relation(fields: [categoryId], references: [id])
 
   createdAt DateTime @default(now())
-}
+  updatedAt DateTime @default(now()) @updatedAt
 
-model Blog {
-  id          String   @id @default(uuid())
-  title       String
-  slug        String   @unique
-  description String
-  content     String
-  image       String?
-
-  categoryId  String
-  category    BlogCategory @relation(fields: [categoryId], references: [id])
-
-  isPublished Boolean  @default(true)
-
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-}
-
-model ManualPricing {
-  id        String   @id @default(uuid())
-
-  carId     String
-  from      String
-  to        String
-
-  date      DateTime @db.Date   // 🔥 only date, no time issue
-  price     Float
-
-  tripType  String?             // optional (oneway / round)
-
-  car       CarCategory @relation(fields: [carId], references: [id])
-
-  createdAt DateTime @default(now())
-
-  @@unique([carId, from, to, date])   // ❌ no duplicate pricing
-  @@index([carId, from, to, date])    // ⚡ fast query
-}
-
-model stock {
-  id        String   @id @default(uuid())
-  from      String
-  to        String
-  car       String
-  price     Float
-  trend     Trend
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-}
-enum Trend {
-  UP
-  DOWN
+  enquiries PackageEnquiry[]
 }
 
 model PackageEnquiry {
-  id        String   @id @default(uuid())
+  id Int @id @default(autoincrement())
   name      String
   email     String?
   phone     String
-  fromDate  String
-  toDate    String
-  message   String?
-  
-  packageId String
-  package   Package  @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  fromDate  DateTime
+  toDate    DateTime
+  message   String? @db.Text
+  packageId Int
+  carCategoryId Int?
 
-  status    String   @default("pending") // pending, contacted, resolved
+  status    String @default("pending")
   createdAt DateTime @default(now())
+
+  package Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  carCategory CarCategory? @relation(fields: [carCategoryId], references: [id])
+}
+
+model ManualPricing {
+  id Int @id @default(autoincrement())
+  categoryId Int
+  from   String
+  to     String
+  date   DateTime
+  price  Float
+
+  category CarCategory @relation(fields: [categoryId], references: [id])
+
+  @@unique([categoryId, from, to, date])
+}
+
+model Stock {
+  id Int @id @default(autoincrement())
+  from      String
+  car       String
+  price     Float
+  trend     String
+  isActive  Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([from, car])
 }
 
 model BookingLog {
-  id        String   @id @default(uuid())
-  bookingId String
-  action    String   // e.g. "DISPATCH", "REASSIGN", "PAYMENT_CASH"
+  id Int @id @default(autoincrement())
+  bookingId Int
+  action    String
   message   String
+
   createdAt DateTime @default(now())
 
-  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
-
-  @@index([bookingId])
+  booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 }
+
