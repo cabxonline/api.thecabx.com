@@ -206,13 +206,15 @@ model PackageEnquiry {
   fromDate  DateTime
   toDate    DateTime
   message   String? @db.Text
-  packageId Int
+  packageId Int?
+  stockId   Int?
   carCategoryId Int?
 
   status    String @default("pending")
   createdAt DateTime @default(now())
 
-  package Package @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  package Package? @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  stock   Stock?   @relation(fields: [stockId], references: [id])
   carCategory CarCategory? @relation(fields: [carCategoryId], references: [id])
 }
 
@@ -238,6 +240,8 @@ model Stock {
   isActive  Boolean @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
+
+  enquiries PackageEnquiry[]
 
   @@unique([from, car])
 }

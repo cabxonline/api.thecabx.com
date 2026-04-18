@@ -49,7 +49,7 @@ DASHBOARD STATS (ADVANCED ANALYTICS)
 exports.getStats = async (req, res) => {
   try {
     const { from, to } = req.query
-    
+
     // Construct temporal filter
     const dateFilter = {}
     if (from || to) {
@@ -69,7 +69,7 @@ exports.getStats = async (req, res) => {
     ])
 
     const revenueData = await prisma.payment.aggregate({
-      where: { 
+      where: {
         status: "paid",
         ...dateFilter
       },
@@ -114,7 +114,7 @@ exports.getStats = async (req, res) => {
     // 4. Revenue by Provider (Filtered)
     const providerRevenue = await prisma.payment.groupBy({
       by: ['provider'],
-      where: { 
+      where: {
         status: 'paid',
         ...dateFilter
       },
@@ -143,23 +143,17 @@ SUBMIT PACKAGE ENQUIRY
 */
 exports.submitPackageEnquiry = async (req, res) => {
   try {
-    const { name, email, phone, fromDate, toDate, message, packageId, carCategoryId } = req.body
-    if (!name || !phone || !fromDate || !toDate || !packageId) {
+    const { name, email, phone, fromDate, toDate, message, packageId, stockId, carCategoryId } = req.body
+    if (!name || !phone || !fromDate || !toDate || (!packageId && !stockId)) {
       return res.status(400).json({ error: "Missing required fields" })
     }
-    const enquiry = await prisma.packageEnquiry.create({
-      data: { 
-        name, 
-        email, 
-        phone, 
-        fromDate: new Date(fromDate), 
-        toDate: new Date(toDate), 
-        message, 
-        packageId: Number(packageId),
-        carCategoryId: carCategoryId ? Number(carCategoryId) : null
-      }
-    })
-    res.status(201).json({ success: true, enquiry })
+    // Using Raw SQL to bypass stale Prisma Client validation issues
+    await prisma.$executeRaw`
+      INSERT INTO PackageEnquiry (name, email, phone, fromDate, toDate, message, packageId, stockId, carCategoryId, status, createdAt)
+      VALUES (${name}, ${email || null}, ${phone}, ${new Date(fromDate)}, ${new Date(toDate)}, ${message || null}, ${packageId ? Number(packageId) : null}, ${stockId ? Number(stockId) : null}, ${carCategoryId ? Number(carCategoryId) : null}, 'pending', NOW(3))
+    `
+
+    res.status(201).json({ success: true, message: "Enquiry submitted successfully" })
   } catch (err) {
     console.error("Enquiry submission error:", err)
     res.status(500).json({ error: "Failed to submit enquiry" })
@@ -173,12 +167,12 @@ exports.getDates = async (req, res) => {
   try {
     const dates = []
     const today = new Date()
-    
-    // Generate dates for the next 30 days
-    for (let i = 0; i < 30; i++) {
+
+    // Generate dates for the next 15 days
+    for (let i = 0; i < 15; i++) {
       const d = new Date(today)
       d.setDate(today.getDate() + i)
-      
+
       dates.push({
         day: d.toLocaleDateString('en-US', { weekday: 'short' }),
         date: d.getDate().toString(),
@@ -186,7 +180,7 @@ exports.getDates = async (req, res) => {
         tag: i === 0 ? "Fastest" : i < 5 ? "Popular" : "Available"
       })
     }
-    
+
     res.json(dates)
   } catch (err) {
     console.error("Failed to generate dates:", err)

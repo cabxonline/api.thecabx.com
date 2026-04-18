@@ -18,6 +18,7 @@ const getEnquiries = async (req, res) => {
             },
             include: {
                 package: true,
+                stock: true,
                 carCategory: true
             },
             orderBy: {
