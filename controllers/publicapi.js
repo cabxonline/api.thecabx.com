@@ -144,13 +144,33 @@ SUBMIT PACKAGE ENQUIRY
 exports.submitPackageEnquiry = async (req, res) => {
   try {
     const { name, email, phone, fromDate, toDate, message, packageId, stockId, carCategoryId } = req.body
-    if (!name || !phone || !fromDate || !toDate || (!packageId && !stockId)) {
+    if (!name || !phone || (!packageId && !stockId)) {
       return res.status(400).json({ error: "Missing required fields" })
     }
+
+    // Safe Date Parsing
+    const parseDate = (d) => {
+      if (!d) return new Date()
+      const date = new Date(d)
+      return isNaN(date.getTime()) ? new Date() : date
+    }
+
+    // Safe Integer Parsing
+    const toInt = (val) => {
+      const n = parseInt(val)
+      return isNaN(n) ? null : n
+    }
+
+    const start = parseDate(fromDate)
+    const end = parseDate(toDate)
+    const pId = toInt(packageId)
+    const sId = toInt(stockId)
+    const cId = toInt(carCategoryId)
+
     // Using Raw SQL to bypass stale Prisma Client validation issues
     await prisma.$executeRaw`
       INSERT INTO PackageEnquiry (name, email, phone, fromDate, toDate, message, packageId, stockId, carCategoryId, status, createdAt)
-      VALUES (${name}, ${email || null}, ${phone}, ${new Date(fromDate)}, ${new Date(toDate)}, ${message || null}, ${packageId ? Number(packageId) : null}, ${stockId ? Number(stockId) : null}, ${carCategoryId ? Number(carCategoryId) : null}, 'pending', NOW(3))
+      VALUES (${name}, ${email || null}, ${phone}, ${start}, ${end}, ${message || null}, ${pId}, ${sId}, ${cId}, 'pending', ${new Date()})
     `
 
     res.status(201).json({ success: true, message: "Enquiry submitted successfully" })
