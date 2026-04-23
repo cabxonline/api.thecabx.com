@@ -5,5 +5,6 @@ router.post("/search-cars", publicController.searchCars)
 router.get("/stats", publicController.getStats)
 router.get("/dates", publicController.getDates)
 router.post("/package-enquiry", publicController.submitPackageEnquiry)
+router.get("/cities", publicController.getCities)
 
 module.exports = router

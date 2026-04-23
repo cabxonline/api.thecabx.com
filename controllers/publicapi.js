@@ -207,3 +207,59 @@ exports.getDates = async (req, res) => {
     res.status(500).json({ error: "Failed to load dates" })
   }
 }
+
+/*
+GET CITIES (AUTOCOMPLETE WITH EXTERNAL API)
+*/
+exports.getCities = async (req, res) => {
+  try {
+    const { search, type } = req.query;
+    if (!search) {
+      return res.json([]);
+    }
+
+    // Using Nominatim free geocoding API
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(search)}&format=json&addressdetails=1&limit=5&countrycodes=in`;
+    
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "CabX-BookingApp/1.0" // Required by Nominatim policy
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Geocoding error: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    const uniqueNames = new Set();
+    const suggestions = [];
+
+    data.forEach(item => {
+      // Create a nice display name
+      const parts = item.display_name.split(',').map(s => s.trim());
+      const mainText = parts[0];
+      const subText = parts.length > 1 ? parts.slice(1, 3).join(', ') : "";
+      const cityId = item.place_id || item.osm_id;
+
+      if (!uniqueNames.has(mainText)) {
+        uniqueNames.add(mainText);
+        suggestions.push({
+          id: cityId,
+          name: mainText,
+          fullName: item.display_name,
+          subText: subText,
+          latitude: item.lat,
+          longitude: item.lon,
+          type: type // Echo back the type if requested
+        });
+      }
+    });
+
+    res.json(suggestions);
+  } catch (err) {
+    console.error("City fetch error:", err);
+    res.status(500).json({ error: "Failed to fetch city suggestions", details: err.message });
+  }
+}
