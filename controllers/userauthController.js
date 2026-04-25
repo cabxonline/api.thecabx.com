@@ -169,3 +169,43 @@ exports.verifyOtp = async (req, res) => {
 exports.logout = async (req, res) => {
   res.json({ message: "Logged out" })
 }
+
+// =========================
+// UPDATE PROFILE
+// =========================
+exports.updateProfile = async (req, res) => {
+  try {
+    const { name, email, phone } = req.body;
+    const userId = req.user.userId;
+
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { 
+        name: name || undefined, 
+        email: email || undefined, 
+        phone: phone || undefined 
+      },
+      include: { role: true }
+    });
+
+    res.json({
+      message: "Profile updated successfully",
+      user: {
+        id: updatedUser.id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        phone: updatedUser.phone,
+        role: updatedUser.role.name
+      }
+    });
+  } catch (err) {
+    if (err.code === 'P2002') {
+       return res.status(400).json({ message: "Email or phone already in use." });
+    }
+    res.status(500).json({ error: err.message });
+  }
+}

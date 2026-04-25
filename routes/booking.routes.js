@@ -19,6 +19,13 @@ router.get(
   bookingController.getBookings
 )
 
+// USER BOOKINGS
+router.get(
+  "/my",
+  auth,
+  bookingController.myBookings
+)
+
 // GET SINGLE BOOKING
 router.get(
   "/:id",
@@ -73,13 +80,6 @@ router.delete(
   auth,
   permission("booking.delete"),
   bookingController.deleteBooking
-)
-
-// USER BOOKINGS
-router.get(
-  "/my",
-  auth,
-  bookingController.myBookings
 )
 
 module.exports = router

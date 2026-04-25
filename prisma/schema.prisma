@@ -257,3 +257,16 @@ model BookingLog {
   booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 }
 
+model MailTemplate {
+  id           Int      @id @default(autoincrement())
+  key          String   @unique
+  name         String
+  subject      String
+  from_address String?
+  from_name    String?
+  body_html    String?  @db.Text
+  body_text    String?  @db.Text
+  is_active    Boolean  @default(true)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @default(now()) @updatedAt
+}

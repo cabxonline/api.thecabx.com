@@ -3,49 +3,44 @@ const nodemailer = require('nodemailer')
 
 async function sendMailTemplate(keyOrId, to, data = {}) {
   try {
-    // Hardcoded templates since MailTemplate model is removed
-    const templates = {
-      "booking_confirmation": {
-        subject: "Booking Confirmed - Travel with CabX",
-        body: `Hello {{name}}, your booking is confirmed. Your unique booking ID is {{booking_number}}.`
-      },
-      "booking_rescheduled": {
-        subject: "Travel Alert: Booking Rescheduled",
-        body: `Hello {{name}}, your travel schedule has been updated to {{date}}.`
-      },
-      "booking_cancelled": {
-        subject: "Notice: Booking Cancellation",
-        body: `Hello {{name}}, your booking has been formally cancelled as requested.`
-      }
+    let template;
+    // 1️⃣ Fetch template
+    if (!isNaN(keyOrId)) {
+      template = await prisma.mailTemplate.findUnique({ where: { id: Number(keyOrId) } });
+    } else {
+      template = await prisma.mailTemplate.findUnique({ where: { key: String(keyOrId) } });
     }
 
-    const template = templates[keyOrId]
-
-    if (!template) {
-      console.warn(`Local template not found: ${keyOrId}`)
+    if (!template || !template.is_active) {
+      console.warn(`Mail template not found or inactive: ${keyOrId}`)
       return false
     }
 
-    // Common dynamic values
+    // 2️⃣ Common dynamic values
     data.app_name = data.app_name || process.env.APP_NAME || "CabX"
     data.time = data.time || new Date().toLocaleString()
 
-    // Subject rendering
-    let subject = template.subject
+    // 3️⃣ Subject rendering
+    let subject = template.subject || ''
     for (const [k, v] of Object.entries(data)) {
       subject = subject.replace(new RegExp(`{{\\s*${k}\\s*}}`, 'g'), String(v))
     }
 
-    // Body rendering 
-    let renderedBody = template.body
+    // 4️⃣ Body rendering (from DB)
+    let bodyHtml = template.body_html || template.body_text || ''
     for (const [k, v] of Object.entries(data)) {
-      renderedBody = renderedBody.replace(new RegExp(`{{\\s*${k}\\s*}}`, 'g'), String(v))
+      bodyHtml = bodyHtml.replace(new RegExp(`{{\\s*${k}\\s*}}`, 'g'), String(v))
     }
 
-    // 5. Wrap in HTML
-    const finalHtml = `
+    // 5️⃣ Wrap in HTML (Fixed Template)
+    const wrapper = `
 <!doctype html>
 <html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width">
+<title>${subject}</title>
+</head>
 <body style="margin:0;padding:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;">
 <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;">
 <tr><td align="center" style="padding:30px 10px;">
@@ -55,7 +50,7 @@ async function sendMailTemplate(keyOrId, to, data = {}) {
 </td></tr>
 <tr><td style="padding:30px;">
 <div style="max-width:520px;margin:0 auto;font-size:15px;line-height:1.6;color:#333333;">
-${renderedBody}
+${bodyHtml}
 </div>
 </td></tr>
 <tr><td style="padding:18px 30px;background:#f1f5f9;text-align:center;font-size:13px;color:#6b7280;">
@@ -65,12 +60,12 @@ ${renderedBody}
 </body>
 </html>`
 
-    // 6. Send Mail 
+    // 6️⃣ Mail details
     if (!process.env.SMTP_HOST) {
-        console.warn('Mail request ignored: Missing SMTP credentials securely loaded in process.env')
-        return false;
+      console.warn('Mail request ignored: Missing SMTP credentials securely loaded in process.env')
+      return false;
     }
-    
+
     const transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: process.env.SMTP_PORT || 587,
@@ -80,11 +75,15 @@ ${renderedBody}
       }
     })
 
+    const fromAddress = template.from_address || process.env.MAIL_FROM_ADDRESS
+    const fromName = template.from_name || process.env.MAIL_FROM_NAME || "CabX"
+
+    // 7️⃣ Send Mail
     await transporter.sendMail({
-      from: `"${process.env.MAIL_FROM_NAME || "CabX"}" <${process.env.MAIL_FROM_ADDRESS}>`,
+      from: `"${fromName}" <${fromAddress}>`,
       to,
       subject,
-      html: finalHtml
+      html: wrapper
     })
     console.log(`Mail sent successfully to ${to}`)
     return true
@@ -101,9 +100,16 @@ async function sendWhatsappMsg(phone, templateName, variables = [], options = {}
       return false
     }
 
+    if (!phone || !templateName) {
+      console.warn('[WHATSAPP] Missing phone or template', { phone, templateName });
+      return false;
+    }
+
+    // 1️⃣ Normalize Phone
     let normalizedPhone = phone.replace(/[^0-9]/g, '')
     if (normalizedPhone.length === 10) normalizedPhone = '91' + normalizedPhone
 
+    // 2️⃣ Build Payload
     const payload = {
       phone: normalizedPhone,
       template_name: templateName,
@@ -116,6 +122,7 @@ async function sendWhatsappMsg(phone, templateName, variables = [], options = {}
       payload.button_value = options.button_value
     }
 
+    // 3️⃣ Send Request
     const response = await fetch('https://api.messegy.com/api/v1/whatsapp/send-single', {
       method: "POST",
       headers: {
@@ -126,6 +133,7 @@ async function sendWhatsappMsg(phone, templateName, variables = [], options = {}
       body: JSON.stringify(payload)
     })
 
+    // 4️⃣ Handle Response
     if (!response.ok) {
       const errorText = await response.text()
       console.error('[WHATSAPP][FAILED]', response.status, errorText)
