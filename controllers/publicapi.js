@@ -1,4 +1,5 @@
 const prisma = require("../utils/prisma")
+const { calculateDynamicPrice } = require("../utils/pricing")
 
 /*
 SEARCH CARS
@@ -7,25 +8,24 @@ exports.searchCars = async (req, res) => {
   try {
     const { tripType, from, to, date } = req.body
     const categories = await prisma.carCategory.findMany()
-    const selectedDate = new Date(date)
+    
+    // Fix Node.js parsing year 2001 if only Day and Month are provided (e.g. "15-May")
+    let dateStr = date || "";
+    if (dateStr && dateStr.split('-').length === 2) {
+       dateStr = `${dateStr}-${new Date().getFullYear()}`;
+    }
+    const selectedDate = new Date(dateStr)
 
     const cars = await Promise.all(
       categories.map(async (cat) => {
-        const distance = 120 // later replace with real API
-        const manual = await prisma.manualPricing.findFirst({
-          where: {
-            categoryId: cat.id,
-            from,
+        // Use Centralized Pricing Logic
+        const price = await calculateDynamicPrice({
+            tripType,
+            from: from?.split(",")[0]?.trim(), // Normalize city
             to,
-            date: {
-              gte: new Date(selectedDate.setHours(0, 0, 0, 0)),
-              lte: new Date(selectedDate.setHours(23, 59, 59, 999))
-            }
-          }
-        })
-
-        // NOTE: baseFare and perKm were removed from schema, using manual or 0 for now
-        let price = manual ? manual.price : (Number(cat.baseFare || 0) + distance * Number(cat.perKm || 0))
+            carCategoryName: cat.name,
+            date: dateStr
+        });
 
         return {
           id: cat.id,
@@ -33,7 +33,7 @@ exports.searchCars = async (req, res) => {
           type: "Cab",
           capacity: cat.capacity,
           bags: 2,
-          price
+          price: Math.round(price)
         }
       })
     )
@@ -185,26 +185,71 @@ GET AVAILABLE DATES
 */
 exports.getDates = async (req, res) => {
   try {
-    const dates = []
-    const today = new Date()
+    const { from, to, tripType, category } = req.query;
+    const dates = [];
+    const today = new Date();
+
+    // Base Pricing Setup
+    let basePrice = 10; // Fallback
+    if (from && category) {
+       const stock = await prisma.stock.findFirst({
+          where: { from, car: category }
+       });
+       if (stock) basePrice = stock.price;
+    }
+
+    let tytTrendData = null;
+    if (tripType) {
+       tytTrendData = await prisma.tytTrend.findUnique({
+          where: { tripType }
+       });
+    }
 
     // Generate dates for the next 15 days
     for (let i = 0; i < 15; i++) {
-      const d = new Date(today)
-      d.setDate(today.getDate() + i)
+      const d = new Date(today);
+      d.setDate(today.getDate() + i);
+
+      const shortDay = d.toLocaleDateString('en-US', { weekday: 'short' });
+      const dayMap = { mon: 'monday', tue: 'tuesday', wed: 'wednesday', thu: 'thursday', fri: 'friday', sat: 'saturday', sun: 'sunday' };
+      const fullDay = dayMap[shortDay.toLowerCase()] || shortDay.toLowerCase();
+
+      const dStr = `${d.getDate()}-${d.toLocaleDateString('en-US', { month: 'short' })}`
+      
+      const displayPrice = await calculateDynamicPrice({
+        tripType,
+        from: from?.split(",")[0]?.trim(), // Normalize city
+        carCategoryName: category,
+        date: dStr
+      });
+
+      // Fetch trend for tags
+      let trend = "STABLE";
+      let percentage = 0;
+      if (tytTrendData && tytTrendData.config) {
+          const config = typeof tytTrendData.config === 'string' ? JSON.parse(tytTrendData.config) : tytTrendData.config;
+          const t = config[fullDay];
+          if (t) {
+            trend = t.trend;
+            percentage = t.percentage;
+          }
+      }
 
       dates.push({
-        day: d.toLocaleDateString('en-US', { weekday: 'short' }),
+        day: shortDay,
         date: d.getDate().toString(),
         month: d.toLocaleDateString('en-US', { month: 'short' }),
-        tag: i === 0 ? "Fastest" : i < 5 ? "Popular" : "Available"
-      })
+        tag: i === 0 ? "Fastest" : i < 5 ? "Popular" : "Available",
+        displayPrice: Math.round(displayPrice || 0),
+        trend,
+        percentage
+      });
     }
 
-    res.json(dates)
+    res.json(dates);
   } catch (err) {
-    console.error("Failed to generate dates:", err)
-    res.status(500).json({ error: "Failed to load dates" })
+    console.error("Failed to generate dates:", err);
+    res.status(500).json({ error: "Failed to load dates" });
   }
 }
 

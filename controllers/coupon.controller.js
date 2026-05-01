@@ -87,12 +87,17 @@ exports.deleteCoupon = async (req, res) => {
   }
 };
 
-const validateCouponInternal = async ({ code, city, tripType, isPackage, amount, email, phone }) => {
+const validateCouponInternal = async ({ code: rawCode, city, tripType, isPackage, amount, email, phone }) => {
+  const code = rawCode?.trim()?.toUpperCase();
   if (!code) return { error: "Coupon code is required" };
   if (!amount) return { error: "Base amount is required" };
 
-  const coupon = await prisma.coupon.findUnique({
-    where: { code: code }
+  const coupon = await prisma.coupon.findFirst({
+    where: { 
+      code: {
+        equals: code,
+      }
+    }
   });
 
   if (!coupon) return { error: "Invalid coupon code" };
@@ -219,7 +224,7 @@ exports.validateCoupon = async (req, res) => {
     const result = await validateCouponInternal({ code, city, tripType, isPackage, amount, email, phone });
 
     if (result.error) {
-      return res.status(400).json({ message: result.error });
+      return res.status(400).json({ success: false, error: result.error, message: result.error });
     }
 
     res.json(result);

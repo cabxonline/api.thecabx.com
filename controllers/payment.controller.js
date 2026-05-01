@@ -3,6 +3,8 @@ const crypto = require("crypto")
 const prisma = require("../utils/prisma")
 const bcrypt = require("bcrypt")
 const { validateCouponInternal } = require("./coupon.controller")
+const { notifyBookingConfirmed } = require("../utils/notification")
+const { calculateDynamicPrice } = require("../utils/pricing")
 
 const razorpay = new Razorpay({
   key_id: process.env.RAZORPAY_KEY,
@@ -13,7 +15,7 @@ const normalizeCity = (city) => city?.split(",")[0]?.trim() || ""
 
 const generateBookingNumber = () => `CBX-${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100)}`
 
-const calculatePriceInternal = async (carId, from, tripType, extras, couponCode, email, phone) => {
+const calculatePriceInternal = async (carId, from, tripType, extras, couponCode, email, phone, date) => {
   const category = await prisma.carCategory.findUnique({
     where: { id: Number(carId) }
   })
@@ -22,24 +24,18 @@ const calculatePriceInternal = async (carId, from, tripType, extras, couponCode,
 
   const city = normalizeCity(from)
 
-  // 🔥 FETCH TYT BASE PRICE FROM STOCK TABLE
-  const stock = await prisma.stock.findUnique({
-    where: {
-      from_car: {
-        from: city,
-        car: category.name
-      }
-    }
+  const dynamicPrice = await calculateDynamicPrice({
+    tripType,
+    from: city,
+    carCategoryName: category.name,
+    date: date
   })
 
-  const basePrice = stock ? stock.price : 10 // Fallback
+  if (!dynamicPrice) {
+    return { error: "Route pricing not found" }
+  }
 
-  // 🔥 SYNC MULTIPLIERS (Round-Trip: 300, Local: 120, Airport: 180)
-  let multiplier = 180
-  if (tripType === "roundtrip") multiplier = 300
-  if (tripType === "local") multiplier = 120
-
-  let total = Math.round(basePrice * multiplier)
+  let total = dynamicPrice
 
   if (extras?.pet) total += 500
   if (extras?.carrier) total += 100
@@ -68,7 +64,16 @@ const calculatePriceInternal = async (carId, from, tripType, extras, couponCode,
   const gst = Math.round(newTotal * 0.05)
   const grandTotal = newTotal + gst
 
-  return { total: newTotal, grandTotal, partial: Math.round(grandTotal * 0.2), basePrice, multiplier, discountAmount, couponId, originalTotal: total }
+  return { 
+    total: newTotal, 
+    grandTotal, 
+    partial: Math.round(grandTotal * 0.2), 
+    basePrice: dynamicPrice, 
+    multiplier: 1, 
+    discountAmount, 
+    couponId, 
+    originalTotal: total 
+  }
 }
 
 exports.createOrder = async (req, res) => {
@@ -79,7 +84,7 @@ exports.createOrder = async (req, res) => {
     console.log(`🚀 [${requestId}] CREATE ORDER HIT`)
     console.log(`📥 [${requestId}] Body:`, req.body)
 
-    const { carId, from, to, tripType, paymentType, extras, couponCode, email, phone } = req.body
+    const { carId, from, to, tripType, paymentType, extras, couponCode, email, phone, date } = req.body
 
     // 🔴 Validation
     if (!carId) {
@@ -97,7 +102,8 @@ exports.createOrder = async (req, res) => {
       extras,
       couponCode,
       email,
-      phone
+      phone,
+      date
     )
 
     console.log(`📊 [${requestId}] Price Result:`, priceResult)
@@ -209,7 +215,8 @@ exports.verifyPayment = async (req, res) => {
       bookingData.extras,
       bookingData.couponCode,
       bookingData.customer?.email,
-      bookingData.customer?.phone
+      bookingData.customer?.phone,
+      bookingData.date
     )
 
     console.log(`📊 [${requestId}] Price Result:`, priceResult)
@@ -318,6 +325,21 @@ exports.verifyPayment = async (req, res) => {
     })
 
     console.log(`💳 [${requestId}] Payment Saved`)
+
+    // 📩 Trigger Notifications
+    try {
+      await notifyBookingConfirmed(booking.email, booking.mobileNumber, {
+        name: booking.guestName,
+        pickup: booking.pickupAddress,
+        drop: booking.dropAddress,
+        time: booking.pickupTime,
+        bookingId: booking.bookingNumber,
+        fare: booking.grandTotal || booking.fare || 0
+      });
+    } catch (notifyErr) {
+      console.error(`⚠️ [${requestId}] Notification failed:`, notifyErr);
+    }
+
     console.log(`⏱️ [${requestId}] Time: ${Date.now() - startTime}ms`)
 
     return res.json({
@@ -347,7 +369,7 @@ exports.paylaterBooking = async (req, res) => {
 
     const { userId, categoryId, from, to, tripType, customer, extras, couponCode } = req.body
 
-    const priceResult = await calculatePriceInternal(categoryId, from, tripType, extras, couponCode, customer?.email, customer?.phone)
+    const priceResult = await calculatePriceInternal(categoryId, from, tripType, extras, couponCode, customer?.email, customer?.phone, req.body.date)
 
     console.log(`📊 [${requestId}] Price:`, priceResult)
 
@@ -410,6 +432,20 @@ exports.paylaterBooking = async (req, res) => {
 
     console.log(`📦 [${requestId}] Booking Created`, booking)
 
+    // 📩 Trigger Notifications
+    try {
+      await notifyBookingConfirmed(booking.email, booking.mobileNumber, {
+        name: booking.guestName,
+        pickup: booking.pickupAddress,
+        drop: booking.dropAddress,
+        time: booking.pickupTime,
+        bookingId: booking.bookingNumber,
+        fare: booking.grandTotal || booking.fare || 0
+      });
+    } catch (notifyErr) {
+      console.error(`⚠️ [${requestId}] Notification failed:`, notifyErr);
+    }
+
     res.json(booking)
 
   } catch (err) {
@@ -438,3 +474,47 @@ exports.getBookingStatus = async (req, res) => {
     res.status(500).json({ error: "Failed to fetch status" });
   }
 };
+
+exports.getUserPayments = async (req, res) => {
+  try {
+    const userId = req.user.userId
+    const payments = await prisma.payment.findMany({
+      where: {
+        booking: { userId },
+        type: "payment"
+      },
+      include: {
+        booking: {
+          include: { carCategory: true }
+        }
+      },
+      orderBy: { createdAt: "desc" }
+    })
+    res.json(payments)
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: "Failed to fetch payments" })
+  }
+}
+
+exports.getUserRefunds = async (req, res) => {
+  try {
+    const userId = req.user.userId
+    const refunds = await prisma.payment.findMany({
+      where: {
+        booking: { userId },
+        type: "refund"
+      },
+      include: {
+        booking: {
+          include: { carCategory: true }
+        }
+      },
+      orderBy: { createdAt: "desc" }
+    })
+    res.json(refunds)
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ message: "Failed to fetch refunds" })
+  }
+}

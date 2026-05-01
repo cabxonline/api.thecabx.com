@@ -20,6 +20,8 @@ model User {
   role   Role   @relation(fields: [roleId], references: [id])
 
   bookings Booking[]
+  notifications Notification[]
+  supportTickets SupportTicket[]
 
   isActive Boolean @default(true)
 
@@ -165,7 +167,7 @@ model Payment {
   status    String
   provider  String
   transactionId String?
-
+  type          String   @default("payment") // "payment", "refund"
   createdAt DateTime @default(now())
 
   booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
@@ -314,4 +316,54 @@ model TytTrend {
   config    Json     // stores day-by-day trend configuration
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  bookingId Int?
+  type      String
+  message   String   @db.Text
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+model Policy {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique // "privacy-policy", "terms-and-condition", "refund-policy"
+  title     String
+  content   String   @db.Text
+  updatedAt DateTime @default(now()) @updatedAt
+}
+
+model SupportTicket {
+  id          Int            @id @default(autoincrement())
+  ticketId    String         @unique // ST-XXXXXX
+  userId      Int
+  subject     String
+  status      String         @default("open") // "open", "in_progress", "closed"
+  priority    String         @default("medium") // "low", "medium", "high"
+  
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @default(now()) @updatedAt
+
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  replies     SupportReply[]
+
+  @@index([userId])
+  @@index([ticketId])
+}
+
+model SupportReply {
+  id          Int            @id @default(autoincrement())
+  ticketId    Int
+  senderId    Int
+  message     String         @db.Text
+  isAdmin     Boolean        @default(false)
+  
+  createdAt   DateTime       @default(now())
+
+  ticket      SupportTicket  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 }

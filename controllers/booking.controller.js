@@ -1,5 +1,10 @@
 const prisma = require("../utils/prisma")
-const { sendMailTemplate, sendWhatsappMsg } = require("../utils/notification")
+const { 
+  notifyBookingConfirmed, 
+  notifyRideCompleted, 
+  notifyDriverAssigned, 
+  notifyBookingCancelled 
+} = require("../utils/notification")
 
 const generateBookingNumber = () => `CBX-${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100)}`
 
@@ -71,23 +76,17 @@ exports.createBooking = async (req, res) => {
     // 📩 Trigger Notifications
     try {
       const user = await prisma.user.findUnique({ where: { id: booking.userId } });
-
-      const notificationData = {
-        name: booking.guestName || user?.name || "Customer",
-        booking_number: booking.bookingNumber
-      };
-
-      // Email
-      const emailTo = user?.email; // Use user's registered email
-      if (emailTo) {
-        await sendMailTemplate('booking_confirmed_v1', emailTo, notificationData);
-      }
-
-      // WhatsApp
+      const emailTo = user?.email;
       const phoneTo = booking.mobileNumber || user?.phone;
-      if (phoneTo) {
-        await sendWhatsappMsg(phoneTo, 'booking_confirmed_v1', [notificationData.name, notificationData.booking_number]);
-      }
+
+      await notifyBookingConfirmed(emailTo, phoneTo, {
+        name: booking.guestName || user?.name || "Customer",
+        pickup: booking.pickupAddress,
+        drop: booking.dropAddress,
+        time: booking.pickupTime,
+        bookingId: booking.bookingNumber,
+        fare: booking.grandTotal || booking.fare || 0
+      });
     } catch (notifyErr) {
       console.error("⚠️ Failed to send booking creation notifications:", notifyErr);
     }
@@ -250,15 +249,16 @@ exports.updateBooking = async (req, res) => {
       if (updateData.status === "completed") {
         try {
           const user = await prisma.user.findUnique({ where: { id: booking.userId } });
-          const notifyData = {
-            name: booking.guestName || user?.name || "Customer",
-            booking_number: booking.bookingNumber,
-            total_fare: booking.fare || 0
-          };
-          const phoneTo = booking.mobileNumber || user?.phone;
           const emailTo = user?.email;
-          if (emailTo) await sendMailTemplate("ride_completed_v1", emailTo, notifyData);
-          if (phoneTo) await sendWhatsappMsg(phoneTo, "ride_completed_v1", [notifyData.name, notifyData.booking_number, String(notifyData.total_fare)]);
+          const phoneTo = booking.mobileNumber || user?.phone;
+
+          await notifyRideCompleted(emailTo, phoneTo, {
+            name: booking.guestName || user?.name || "Customer",
+            bookingId: booking.bookingNumber,
+            from: booking.pickupAddress,
+            to: booking.dropAddress,
+            fare: booking.grandTotal || booking.fare || 0
+          });
         } catch (e) {
           console.error("Failed to send ride_completed_v1 notification", e);
         }
@@ -337,25 +337,17 @@ exports.updateBooking = async (req, res) => {
       // Driver Assigned Notification
       try {
         const user = await prisma.user.findUnique({ where: { id: booking.userId } });
-        const notifyData = {
-          name: booking.guestName || user?.name || "Customer",
-          booking_number: booking.bookingNumber,
-          driver_name: newDriver?.name || "Driver",
-          driver_phone: newDriver?.phone || "N/A",
-          car_model: targetCar?.model || "Car",
-          car_plate: targetCar?.plateNumber || ""
-        };
-        const phoneTo = booking.mobileNumber || user?.phone;
         const emailTo = user?.email;
-        if (emailTo) await sendMailTemplate("driver_assigned_v1", emailTo, notifyData);
-        if (phoneTo) await sendWhatsappMsg(phoneTo, "driver_assigned_v1", [
-          notifyData.name,
-          notifyData.booking_number,
-          notifyData.driver_name,
-          notifyData.driver_phone,
-          notifyData.car_model,
-          notifyData.car_plate
-        ]);
+        const phoneTo = booking.mobileNumber || user?.phone;
+
+        await notifyDriverAssigned(emailTo, phoneTo, {
+          name: booking.guestName || user?.name || "Customer",
+          driverName: newDriver?.name || "Driver",
+          driverPhone: newDriver?.phone || "N/A",
+          vehicle: `${targetCar?.model || "Car"} (${targetCar?.plateNumber || ""})`,
+          pickupTime: booking.pickupTime,
+          pickup: booking.pickupAddress
+        });
       } catch (e) {
         console.error("Failed to send driver_assigned_v1 notification", e);
       }
@@ -605,9 +597,18 @@ exports.cancelBooking = async (req, res) => {
     })
 
     // Notification Service Execution
-    if (booking.user) {
-      if (booking.user.email) await sendMailTemplate("booking_cancelled_v1", booking.user.email, { name: booking.user.name })
-      if (booking.user.phone) await sendWhatsappMsg(booking.user.phone, "booking_cancelled_v1", [booking.user.name])
+    try {
+      const emailTo = booking.user?.email;
+      const phoneTo = booking.mobileNumber || booking.user?.phone;
+
+      if (emailTo || phoneTo) {
+        await notifyBookingCancelled(emailTo, phoneTo, {
+          name: booking.guestName || booking.user?.name || "Customer",
+          bookingId: booking.bookingNumber
+        });
+      }
+    } catch (e) {
+      console.error("Failed to send booking_cancelled_v1 notification", e);
     }
 
     res.json({ message: "Booking formally cancelled.", booking })
