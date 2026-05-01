@@ -11,6 +11,13 @@ router.post(
   bookingController.createBooking
 )
 
+// GET LATEST BOOKING FOR POLLING
+router.get(
+  "/poll/latest",
+  auth,
+  bookingController.pollNewBookings
+)
+
 // GET ALL BOOKINGS
 router.get(
   "/",
@@ -56,6 +63,14 @@ router.post(
   auth,
   permission("booking.update"),
   bookingController.sendPaymentLink
+)
+
+// SEND INVOICE
+router.post(
+  "/:id/invoice/send",
+  auth,
+  permission("booking.update"),
+  bookingController.sendInvoice
 )
 
 // RESCHEDULE BOOKING

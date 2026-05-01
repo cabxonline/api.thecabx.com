@@ -179,6 +179,39 @@ const toggleTrend = async (req, res) => {
     }
 };
 
+// FACTORY: GET TRENDS
+const getTytTrends = async (req, res) => {
+    try {
+        const trends = await prisma.tytTrend.findMany();
+        res.json(trends);
+    } catch (err) {
+        console.error("Fetch factory trends error:", err);
+        res.status(500).json({ message: "Failed to fetch factory trends", error: err.message });
+    }
+};
+
+// FACTORY: SAVE TREND
+const saveTytTrend = async (req, res) => {
+    try {
+        const { tripType, config } = req.body;
+        
+        if (!tripType || !config) {
+            return res.status(400).json({ message: "tripType and config are required" });
+        }
+
+        const trend = await prisma.tytTrend.upsert({
+            where: { tripType },
+            update: { config },
+            create: { tripType, config }
+        });
+
+        res.json({ message: "Configuration saved successfully", trend });
+    } catch (err) {
+        console.error("Save factory trend error:", err);
+        res.status(500).json({ message: "Failed to save factory trend", error: err.message });
+    }
+};
+
 module.exports = {
     createStock,
     createBulkStock,
@@ -186,5 +219,7 @@ module.exports = {
     getStock,
     updateStock,
     deleteStock,
-    toggleTrend
+    toggleTrend,
+    getTytTrends,
+    saveTytTrend
 };

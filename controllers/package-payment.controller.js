@@ -9,37 +9,28 @@ const razorpay = new Razorpay({
   key_secret: process.env.RAZORPAY_SECRET
 })
 
-const normalizeCity = (city) => city?.split(",")[0]?.trim() || ""
+const generateBookingNumber = () => `PKGBK-${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100)}`
 
-const generateBookingNumber = () => `CBX-${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100)}`
+const calculatePackagePriceInternal = async (packageId, categoryId, extras, couponCode, email, phone) => {
+  const pkg = await prisma.package.findUnique({
+    where: { id: Number(packageId) }
+  })
 
-const calculatePriceInternal = async (carId, from, tripType, extras, couponCode, email, phone) => {
+  if (!pkg) return { error: "Package not found" }
+
   const category = await prisma.carCategory.findUnique({
-    where: { id: Number(carId) }
+    where: { id: Number(categoryId) }
   })
 
-  if (!category) return { error: "Category not found" }
+  if (!category) return { error: "Car Category not found" }
 
-  const city = normalizeCity(from)
+  let basePrice = pkg.price;
+  
+  if (pkg.carPrices && pkg.carPrices[categoryId]) {
+      basePrice = parseFloat(pkg.carPrices[categoryId]);
+  }
 
-  // 🔥 FETCH TYT BASE PRICE FROM STOCK TABLE
-  const stock = await prisma.stock.findUnique({
-    where: {
-      from_car: {
-        from: city,
-        car: category.name
-      }
-    }
-  })
-
-  const basePrice = stock ? stock.price : 10 // Fallback
-
-  // 🔥 SYNC MULTIPLIERS (Round-Trip: 300, Local: 120, Airport: 180)
-  let multiplier = 180
-  if (tripType === "roundtrip") multiplier = 300
-  if (tripType === "local") multiplier = 120
-
-  let total = Math.round(basePrice * multiplier)
+  let total = Math.round(basePrice)
 
   if (extras?.pet) total += 500
   if (extras?.carrier) total += 100
@@ -50,9 +41,9 @@ const calculatePriceInternal = async (carId, from, tripType, extras, couponCode,
   if (couponCode) {
     const valid = await validateCouponInternal({
       code: couponCode,
-      city: city,
-      tripType: tripType,
-      isPackage: false,
+      city: null, // packages may not have a specific origin city constraint
+      tripType: null,
+      isPackage: true,
       amount: total,
       email: email,
       phone: phone
@@ -68,7 +59,7 @@ const calculatePriceInternal = async (carId, from, tripType, extras, couponCode,
   const gst = Math.round(newTotal * 0.05)
   const grandTotal = newTotal + gst
 
-  return { total: newTotal, grandTotal, partial: Math.round(grandTotal * 0.2), basePrice, multiplier, discountAmount, couponId, originalTotal: total }
+  return { total: newTotal, grandTotal, partial: Math.round(grandTotal * 0.2), basePrice, pkg, category, discountAmount, couponId, originalTotal: total }
 }
 
 exports.createOrder = async (req, res) => {
@@ -76,31 +67,28 @@ exports.createOrder = async (req, res) => {
   const startTime = Date.now()
 
   try {
-    console.log(`🚀 [${requestId}] CREATE ORDER HIT`)
+    console.log(`🚀 [${requestId}] CREATE PACKAGE ORDER HIT`)
     console.log(`📥 [${requestId}] Body:`, req.body)
 
-    const { carId, from, to, tripType, paymentType, extras, couponCode, email, phone } = req.body
+    const { packageId, categoryId, paymentType, extras, couponCode, email, phone } = req.body
 
-    // 🔴 Validation
-    if (!carId) {
-      console.warn(`⚠️ [${requestId}] Missing carId`)
-      return res.status(400).json({ message: "Missing carId" })
+    if (!packageId || !categoryId) {
+      console.warn(`⚠️ [${requestId}] Missing packageId or categoryId`)
+      return res.status(400).json({ message: "Missing packageId or categoryId" })
     }
 
-    // 🔍 Price calculation
-    console.log(`🧮 [${requestId}] Calculating price...`)
+    console.log(`🧮 [${requestId}] Calculating package price...`)
 
-    const priceResult = await calculatePriceInternal(
-      carId,
-      from,
-      tripType,
+    const priceResult = await calculatePackagePriceInternal(
+      packageId,
+      categoryId,
       extras,
       couponCode,
       email,
       phone
     )
 
-    console.log(`📊 [${requestId}] Price Result:`, priceResult)
+    console.log(`📊 [${requestId}] Price Result:`, { total: priceResult.total, partial: priceResult.partial })
 
     if (priceResult.error) {
       console.warn(`⚠️ [${requestId}] Price Error:`, priceResult.error)
@@ -109,18 +97,16 @@ exports.createOrder = async (req, res) => {
 
     const { total, partial, grandTotal } = priceResult
 
-    let payableAmount =
-      paymentType === "partial" ? partial : grandTotal
+    let payableAmount = paymentType === "partial" ? partial : grandTotal
 
     console.log(`💰 [${requestId}] Payable Amount:`, payableAmount)
 
-    // 🔥 Razorpay order
     console.log(`📡 [${requestId}] Creating Razorpay order...`)
 
     const order = await razorpay.orders.create({
-      amount: Math.round(payableAmount * 100), // safer
+      amount: Math.round(payableAmount * 100),
       currency: "INR",
-      receipt: "rcpt_" + Date.now()
+      receipt: "pkg_rcpt_" + Date.now()
     })
 
     console.log(`✅ [${requestId}] Razorpay Order Created:`, order)
@@ -143,19 +129,17 @@ exports.createOrder = async (req, res) => {
 
     return res.status(500).json({
       error: "Order creation failed",
-      requestId // helpful for debugging
+      requestId
     })
   }
 }
-
-
 
 exports.verifyPayment = async (req, res) => {
   const requestId = crypto.randomUUID()
   const startTime = Date.now()
 
   try {
-    console.log(`🚀 [${requestId}] VERIFY PAYMENT HIT`)
+    console.log(`🚀 [${requestId}] VERIFY PACKAGE PAYMENT HIT`)
     console.log(`📥 [${requestId}] Body:`, req.body)
 
     const {
@@ -165,18 +149,16 @@ exports.verifyPayment = async (req, res) => {
       bookingData
     } = req.body
 
-    // 🔴 Basic validation
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       console.warn(`⚠️ [${requestId}] Missing payment fields`)
       return res.status(400).json({ message: "Missing payment fields" })
     }
 
-    if (!bookingData?.categoryId || !bookingData?.from) {
+    if (!bookingData?.packageId || !bookingData?.categoryId || !bookingData?.customer) {
       console.warn(`⚠️ [${requestId}] Missing booking fields`, bookingData)
       return res.status(400).json({ message: "Invalid booking data" })
     }
 
-    // 🔐 Signature verify
     const body = razorpay_order_id + "|" + razorpay_payment_id
 
     const expected = crypto
@@ -194,42 +176,24 @@ exports.verifyPayment = async (req, res) => {
       return res.status(400).json({ message: "Invalid payment" })
     }
 
-    // 🔥 SMART FALLBACKS (important fix)
-    const tripType = bookingData.tripType || (bookingData.to ? "roundtrip" : "airport")
-
-    console.log(`🧠 [${requestId}] TripType used:`, tripType)
-
-    // 🧮 Price calculation (FIXED)
     console.log(`🧮 [${requestId}] Calculating price...`)
 
-    const priceResult = await calculatePriceInternal(
+    const priceResult = await calculatePackagePriceInternal(
+      bookingData.packageId,
       bookingData.categoryId,
-      bookingData.from,
-      tripType,
       bookingData.extras,
       bookingData.couponCode,
       bookingData.customer?.email,
       bookingData.customer?.phone
     )
 
-    console.log(`📊 [${requestId}] Price Result:`, priceResult)
-
     if (priceResult.error) {
       console.warn(`⚠️ [${requestId}] Price error`, priceResult.error)
       return res.status(404).json({ message: priceResult.error })
     }
 
-    const { total, partial, basePrice, multiplier, grandTotal, couponId, discountAmount, originalTotal } = priceResult
+    const { total, partial, basePrice, pkg, category, grandTotal, discountAmount, couponId } = priceResult
 
-    // ⚠️ mismatch detect (no block, just log)
-    if (bookingData.grandTotal && Number(bookingData.grandTotal) !== total) {
-      console.warn(`⚠️ [${requestId}] PRICE MISMATCH`, {
-        frontend: bookingData.grandTotal,
-        backend: total
-      })
-    }
-
-    // 👤 User resolve
     let user = null
 
     if (bookingData.userId) {
@@ -263,10 +227,7 @@ exports.verifyPayment = async (req, res) => {
       return res.status(400).json({ message: "User error" })
     }
 
-    // 💰 Payment calculation
-    const paidAmount =
-      bookingData.paymentType === "partial" ? partial : grandTotal
-
+    const paidAmount = bookingData.paymentType === "partial" ? partial : grandTotal
     const isFullyPaid = paidAmount >= grandTotal
 
     console.log(`💰 [${requestId}] Payment Info`, {
@@ -276,16 +237,15 @@ exports.verifyPayment = async (req, res) => {
       isFullyPaid
     })
 
-    // 📦 Booking create
     const booking = await prisma.booking.create({
       data: {
         bookingNumber: generateBookingNumber(),
         userId: Number(user.id),
         carCategoryId: Number(bookingData.categoryId),
-        pickupAddress: bookingData.from,
-        dropAddress: bookingData.to || "Hourly Local Rental",
+        packageId: Number(bookingData.packageId),
+        pickupAddress: bookingData.customer?.pickupAddress || "Package Pickup",
+        dropAddress: "Package Tour",
         exactPickupAddress: bookingData.customer?.pickupAddress || null,
-        exactDropAddress: bookingData.customer?.dropAddress || null,
         pickupTime: bookingData.time || "Not Specified",
         fare: total,
         grandTotal: total,
@@ -293,9 +253,8 @@ exports.verifyPayment = async (req, res) => {
         guestName: bookingData.guestName || user.name,
         email: bookingData.customer?.email || user.email,
         gender: bookingData.gender || "Not Specified",
-        corporateName: bookingData.customer?.corporateName || null,
         tytRate: basePrice,
-        multiplyBy: multiplier,
+        multiplyBy: 1, // Fixed for packages
         status: "new_booking",
         paymentStatus: isFullyPaid ? "paid" : "partial",
         grandTotal: grandTotal,
@@ -306,7 +265,6 @@ exports.verifyPayment = async (req, res) => {
 
     console.log(`📦 [${requestId}] Booking Created:`, booking)
 
-    // 💳 Payment record
     await prisma.payment.create({
       data: {
         bookingId: booking.id,
@@ -343,20 +301,20 @@ exports.paylaterBooking = async (req, res) => {
   const requestId = require("crypto").randomUUID()
 
   try {
-    console.log(`🚀 [${requestId}] PAY LATER HIT`, req.body)
+    console.log(`🚀 [${requestId}] PAY LATER PACKAGE HIT`, req.body)
 
-    const { userId, categoryId, from, to, tripType, customer, extras, couponCode } = req.body
+    const { userId, packageId, categoryId, customer, extras, time, couponCode } = req.body
 
-    const priceResult = await calculatePriceInternal(categoryId, from, tripType, extras, couponCode, customer?.email, customer?.phone)
+    const priceResult = await calculatePackagePriceInternal(packageId, categoryId, extras, couponCode, customer?.email, customer?.phone)
 
-    console.log(`📊 [${requestId}] Price:`, priceResult)
+    console.log(`📊 [${requestId}] Price:`, { total: priceResult.total })
 
     if (priceResult.error) {
       console.warn(`⚠️ [${requestId}] Price error`)
       return res.status(404).json({ message: priceResult.error })
     }
 
-    const { total, basePrice, multiplier, grandTotal, couponId, discountAmount, originalTotal } = priceResult
+    const { total, basePrice, grandTotal, couponId, discountAmount } = priceResult
 
     let user = null
 
@@ -382,24 +340,29 @@ exports.paylaterBooking = async (req, res) => {
       })
     }
 
+    if (!user) {
+        console.error(`❌ [${requestId}] User error`)
+        return res.status(400).json({ message: "User error" })
+    }
+
     const booking = await prisma.booking.create({
       data: {
         bookingNumber: generateBookingNumber(),
         userId: Number(user.id),
         carCategoryId: Number(categoryId),
-        pickupAddress: from,
-        dropAddress: to || "Hourly Local Rental",
+        packageId: Number(packageId),
+        pickupAddress: customer?.pickupAddress || "Package Pickup",
+        dropAddress: "Package Tour",
         exactPickupAddress: customer?.pickupAddress || null,
-        exactDropAddress: customer?.dropAddress || null,
-        pickupTime: req.body.time || "Not Specified",
+        pickupTime: time || "Not Specified",
         fare: total,
+        grandTotal: total,
         mobileNumber: req.body.mobileNumber || user.phone || "9999999999",
         guestName: req.body.guestName || user.name,
         email: customer?.email || user.email,
         gender: req.body.gender || "Not Specified",
-        corporateName: customer?.corporateName || null,
         tytRate: basePrice,
-        multiplyBy: multiplier,
+        multiplyBy: 1,
         status: "pending",
         paymentStatus: "pending",
         grandTotal: grandTotal,
@@ -417,24 +380,3 @@ exports.paylaterBooking = async (req, res) => {
     res.status(500).json({ error: "Booking failed", requestId })
   }
 }
-exports.getBookingStatus = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const booking = await prisma.booking.findUnique({
-      where: { id: Number(id) },
-      include: {
-        user: true,
-        carCategory: true
-      }
-    });
-
-    if (!booking) {
-      return res.status(404).json({ message: "Booking not found" });
-    }
-
-    res.json(booking);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to fetch status" });
-  }
-};

@@ -118,15 +118,26 @@ GET /bookings?userId=123
 */
 exports.getBookings = async (req, res) => {
   try {
-    const { userId } = req.query
+    const { userId, type } = req.query
+
+    const where = {}
+    if (userId) where.userId = Number(userId)
+    if (type === 'package') {
+        where.packageId = { not: null }
+    } else if (type === 'car') {
+        where.packageId = null
+    }
+
     const bookings = await prisma.booking.findMany({
-      where: userId ? { userId: Number(userId) } : {},
+      where,
       include: {
         user: true,
         carCategory: true,
         driver: { include: { car: true } },
         car: true,
-        payments: true
+        payments: true,
+        package: true,
+        coupon: true
       },
       orderBy: { createdAt: "desc" }
     })
@@ -134,6 +145,38 @@ exports.getBookings = async (req, res) => {
   } catch (err) {
     console.error(err)
     res.status(500).json({ message: "Failed to fetch bookings" })
+  }
+}
+
+/*
+POLL NEW BOOKINGS
+GET /bookings/poll/latest
+*/
+exports.pollNewBookings = async (req, res) => {
+  try {
+    const lastId = req.query.lastId ? Number(req.query.lastId) : 0;
+    
+    // Get the latest booking ID and the total count of new bookings
+    const latestBooking = await prisma.booking.findFirst({
+      orderBy: { id: 'desc' },
+      select: { id: true }
+    });
+
+    const newCount = await prisma.booking.count({
+      where: { status: 'new_booking' }
+    });
+
+    const currentLatestId = latestBooking ? latestBooking.id : 0;
+    const hasNew = currentLatestId > lastId;
+
+    res.json({
+      latestId: currentLatestId,
+      newCount,
+      hasNew
+    });
+  } catch (err) {
+    console.error("Poll Error:", err);
+    res.status(500).json({ message: "Failed to poll bookings" });
   }
 }
 
@@ -152,6 +195,7 @@ exports.getBooking = async (req, res) => {
         driver: { include: { car: true } },
         car: true,
         payments: true,
+        coupon: true,
         logs: {
           orderBy: { createdAt: "desc" }
         }
@@ -430,6 +474,63 @@ exports.sendPaymentLink = async (req, res) => {
 }
 
 /*
+SEND INVOICE
+POST /bookings/:id/invoice/send
+*/
+exports.sendInvoice = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const booking = await prisma.booking.findUnique({
+      where: { id: Number(id) },
+      include: { user: true, driver: { include: { car: true } }, carCategory: true }
+    });
+
+    if (!booking) return res.status(404).json({ message: "Booking not found" });
+
+    const totalPaid = (booking.payments || [])
+      .filter(p => p.status === "paid")
+      .reduce((sum, p) => sum + p.amount, 0);
+    const totalFare = (booking.fare || 0) + (booking.extraKmCost || 0) + (booking.tollsCost || 0);
+    
+    // Construct Invoice Link
+    const invoiceLink = `${process.env.FRONTEND_URL || 'https://thecabx.com'}/invoice/${booking.bookingNumber}`;
+
+    const notifyData = {
+      name: booking.guestName || booking.user?.name || "Customer",
+      booking_number: booking.bookingNumber,
+      total_fare: totalFare.toString(),
+      total_paid: totalPaid.toString(),
+      pending_due: (totalFare - totalPaid).toString(),
+      invoice_link: invoiceLink
+    };
+
+    // Notification Service Execution
+    if (booking.email || booking.user?.email) {
+      await sendMailTemplate("booking_invoice", booking.email || booking.user.email, notifyData);
+    }
+    
+    const phoneTo = booking.mobileNumber || booking.user?.phone;
+    if (phoneTo) {
+      // Assuming a generic template or booking_invoice whatsapp template exists
+      await sendWhatsappMsg(phoneTo, "booking_invoice", [notifyData.name, notifyData.booking_number, notifyData.invoice_link]);
+    }
+
+    await prisma.bookingLog.create({
+      data: {
+        bookingId: booking.id,
+        action: "INVOICE_DISPATCH",
+        message: `Admin manually dispatched digital invoice securely to customer.`
+      }
+    });
+
+    res.json({ message: "Digital Invoice dispatched securely via Mail/WhatsApp." });
+  } catch (err) {
+    console.error("Invoice Dispatch Error:", err);
+    res.status(500).json({ message: "Failed to dispatch invoice" });
+  }
+}
+
+/*
 RESCHEDULE BOOKING
 POST /bookings/:id/reschedule
 */
@@ -545,7 +646,8 @@ exports.myBookings = async (req, res) => {
       include: {
         carCategory: true,
         payments: true,
-        driver: true
+        driver: true,
+        coupon: true
       },
       orderBy: {
         createdAt: "desc"

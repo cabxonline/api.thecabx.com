@@ -53,12 +53,14 @@ app.use("/api/bookings", require("./routes/booking.routes"))
 app.use("/api/car-categories", require("./routes/carCategory.routes"))
 app.use("/api/cars", require("./routes/car.routes"))
 app.use("/api/payments", require("./routes/payment.routes"))
+app.use("/api/package-payments", require("./routes/package-payment.routes"))
 app.use("/api/drivers", require("./routes/driver.routes"))
 app.use("/api/package-categories", require("./routes/category.routes"));
 app.use("/api/packages", require("./routes/package.routes"));
 app.use("/api/tyt", require("./routes/tyt.routes"));
 app.use("/api/manual-pricing", require("./routes/manualPricing.routes"));
 app.use("/api/package-enquiries", require("./routes/enquiry.routes"));
+app.use("/api/coupons", require("./routes/coupon.routes"));
 /*
 |--------------------------------------------------------------------------
 | Public Booking APIs (search etc)

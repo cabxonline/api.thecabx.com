@@ -7,8 +7,14 @@ const {
     getStock,
     updateStock,
     deleteStock,
-    toggleTrend
+    toggleTrend,
+    getTytTrends,
+    saveTytTrend
 } = require("../controllers/tyt.controller");
+
+// Factory
+router.get("/factory", getTytTrends);
+router.post("/factory", saveTytTrend);
 
 // CRUD
 router.post("/", createStock);

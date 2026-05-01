@@ -146,6 +146,13 @@ model Booking {
   payments Payment[]
   logs     BookingLog[]
 
+  couponId Int?
+  coupon   Coupon?     @relation(fields: [couponId], references: [id])
+  discountAmount Float? @default(0)
+
+  packageId   Int?
+  package     Package?    @relation(fields: [packageId], references: [id])
+
   @@index([userId])
   @@index([driverId])
   @@index([bookingNumber])
@@ -196,6 +203,7 @@ model Package {
   updatedAt DateTime @default(now()) @updatedAt
 
   enquiries PackageEnquiry[]
+  bookings  Booking[]
 }
 
 model PackageEnquiry {
@@ -269,4 +277,41 @@ model MailTemplate {
   is_active    Boolean  @default(true)
   created_at   DateTime @default(now())
   updated_at   DateTime @default(now()) @updatedAt
+}
+
+model Coupon {
+  id              Int       @id @default(autoincrement())
+  code            String    @unique
+  title           String
+  description     String?
+  termsConditions String?   @db.Text
+  discountType    String    // "percentage" or "fixed"
+  discountValue   Float
+  maxDiscount     Float?
+  minOrderValue   Float?
+
+  targetCity      String?
+  tripType        String?
+  applicableOn    String    @default("both") // "booking", "package", "both"
+  targetRideCounts String?
+
+  startDate       DateTime?
+  endDate         DateTime?
+  isActive        Boolean   @default(true)
+  maxUsagePerUser Int?      @default(1)
+  totalUsageLimit Int?
+  usedCount       Int       @default(0)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @default(now()) @updatedAt
+
+  bookings        Booking[]
+}
+
+model TytTrend {
+  id        Int      @id @default(autoincrement())
+  tripType  String   @unique // "roundtrip", "local", "airport"
+  config    Json     // stores day-by-day trend configuration
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 }
