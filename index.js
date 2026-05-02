@@ -61,6 +61,7 @@ app.use("/api/tyt", require("./routes/tyt.routes"));
 app.use("/api/manual-pricing", require("./routes/manualPricing.routes"));
 app.use("/api/package-enquiries", require("./routes/enquiry.routes"));
 app.use("/api/coupons", require("./routes/coupon.routes"));
+app.use("/api/blogs", require("./routes/blog.routes"));
 app.use("/api/notifications", require("./routes/notification.routes"));
 app.use("/api/policies", require("./routes/policy.routes"))
 app.use("/api/support", require("./routes/support.routes"));

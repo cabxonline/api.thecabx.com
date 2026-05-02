@@ -176,8 +176,9 @@ model Payment {
 }
 
 model PackageCategory {
-  id Int @id @default(autoincrement())
+  id   Int    @id @default(autoincrement())
   name String
+  description String? @db.Text
 
   isActive  Boolean @default(true)
   image     String?
@@ -366,4 +367,50 @@ model SupportReply {
   createdAt   DateTime       @default(now())
 
   ticket      SupportTicket  @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+}
+
+model Blog {
+  id              Int      @id @default(autoincrement())
+  title           String   @db.VarChar(255)
+  slug            String   @unique @db.VarChar(255)
+  content         String   @db.LongText
+  excerpt         String?  @db.Text
+  author          String   @default("Admin")
+  category        String?  @default("Travel")
+  tags            String?  @db.Text
+  
+  featuredImage   String?  @db.Text
+  imageAltText    String?  @db.VarChar(255)
+  imageTitle      String?  @db.VarChar(255)
+  imageCaption    String?  @db.Text
+
+  // SEO Fields
+  metaTitle       String?  @db.VarChar(255)
+  metaDescription String?  @db.Text
+  focusKeyword    String?  @db.VarChar(255)
+  canonicalUrl    String?  @db.Text
+  robots          String?  @default("index, follow")
+  
+  // OG Fields
+  ogTitle         String?  @db.VarChar(255)
+  ogDescription   String?  @db.Text
+  ogImage         String?  @db.Text
+
+  // Structure & Schema
+  faqSchema       Json?    
+  
+  // Analytics & Engagement
+  viewsCount      Int      @default(0)
+  readTime        Int?     
+  likes           Int      @default(0)
+  shares          Int      @default(0)
+  commentsEnabled Boolean  @default(true)
+
+  isActive        Boolean  @default(true)
+  publishDate     DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @default(now()) @updatedAt
+
+  @@index([slug])
+  @@index([category])
 }
