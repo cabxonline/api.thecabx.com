@@ -8,11 +8,11 @@ exports.searchCars = async (req, res) => {
   try {
     const { tripType, from, to, date } = req.body
     const categories = await prisma.carCategory.findMany()
-    
+
     // Fix Node.js parsing year 2001 if only Day and Month are provided (e.g. "15-May")
     let dateStr = date || "";
     if (dateStr && dateStr.split('-').length === 2) {
-       dateStr = `${dateStr}-${new Date().getFullYear()}`;
+      dateStr = `${dateStr}-${new Date().getFullYear()}`;
     }
     const selectedDate = new Date(dateStr)
 
@@ -20,11 +20,11 @@ exports.searchCars = async (req, res) => {
       categories.map(async (cat) => {
         // Use Centralized Pricing Logic
         const price = await calculateDynamicPrice({
-            tripType,
-            from: from?.split(",")[0]?.trim(), // Normalize city
-            to,
-            carCategoryName: cat.name,
-            date: dateStr
+          tripType,
+          from: from?.split(",")[0]?.trim(), // Normalize city
+          to,
+          carCategoryName: cat.name,
+          date: dateStr
         });
 
         return {
@@ -192,21 +192,21 @@ exports.getDates = async (req, res) => {
     // Base Pricing Setup
     let basePrice = 10; // Fallback
     if (from && category) {
-       const stock = await prisma.stock.findFirst({
-          where: { from, car: category }
-       });
-       if (stock) basePrice = stock.price;
+      const stock = await prisma.stock.findFirst({
+        where: { from, car: category }
+      });
+      if (stock) basePrice = stock.price;
     }
 
     let tytTrendData = null;
     if (tripType) {
-       tytTrendData = await prisma.tytTrend.findUnique({
-          where: { tripType }
-       });
+      tytTrendData = await prisma.tytTrend.findUnique({
+        where: { tripType }
+      });
     }
 
     // Generate dates for the next 15 days
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 7; i++) {
       const d = new Date(today);
       d.setDate(today.getDate() + i);
 
@@ -215,7 +215,7 @@ exports.getDates = async (req, res) => {
       const fullDay = dayMap[shortDay.toLowerCase()] || shortDay.toLowerCase();
 
       const dStr = `${d.getDate()}-${d.toLocaleDateString('en-US', { month: 'short' })}`
-      
+
       const displayPrice = await calculateDynamicPrice({
         tripType,
         from: from?.split(",")[0]?.trim(), // Normalize city
@@ -227,12 +227,12 @@ exports.getDates = async (req, res) => {
       let trend = "STABLE";
       let percentage = 0;
       if (tytTrendData && tytTrendData.config) {
-          const config = typeof tytTrendData.config === 'string' ? JSON.parse(tytTrendData.config) : tytTrendData.config;
-          const t = config[fullDay];
-          if (t) {
-            trend = t.trend;
-            percentage = t.percentage;
-          }
+        const config = typeof tytTrendData.config === 'string' ? JSON.parse(tytTrendData.config) : tytTrendData.config;
+        const t = config[fullDay];
+        if (t) {
+          trend = t.trend;
+          percentage = t.percentage;
+        }
       }
 
       dates.push({
@@ -265,7 +265,7 @@ exports.getCities = async (req, res) => {
 
     // Using Nominatim free geocoding API
     const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(search)}&format=json&addressdetails=1&limit=5&countrycodes=in`;
-    
+
     const response = await fetch(url, {
       headers: {
         "User-Agent": "CabX-BookingApp/1.0" // Required by Nominatim policy
