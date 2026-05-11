@@ -200,9 +200,19 @@ exports.getDates = async (req, res) => {
 
     let tytTrendData = null;
     if (tripType) {
-      tytTrendData = await prisma.tytTrend.findUnique({
-        where: { tripType }
+      const cityFilter = from?.split(",")[0]?.trim() || "All";
+      
+      // Try to find city-specific trend first
+      tytTrendData = await prisma.tytTrend.findFirst({
+        where: { tripType, city: cityFilter }
       });
+
+      // Fallback to "All" if no city-specific trend exists
+      if (!tytTrendData && cityFilter !== "All") {
+        tytTrendData = await prisma.tytTrend.findFirst({
+          where: { tripType, city: "All" }
+        });
+      }
     }
 
     // Generate dates for the next 15 days
@@ -254,57 +264,80 @@ exports.getDates = async (req, res) => {
 }
 
 /*
-GET CITIES (AUTOCOMPLETE WITH EXTERNAL API)
+GET CITIES (AUTOCOMPLETE WITH GOOGLE MAPS API & FALLBACK)
 */
 exports.getCities = async (req, res) => {
+  const { search, type } = req.query;
+  if (!search) {
+    return res.json([]);
+  }
+
   try {
-    const { search, type } = req.query;
-    if (!search) {
-      return res.json([]);
-    }
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+    if (apiKey) {
+      // Using Google Places Autocomplete API for better "short word" suggestions
+      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(search)}&types=(cities)&key=${apiKey}&components=country:in`;
 
-    // Using Nominatim free geocoding API
-    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(search)}&format=json&addressdetails=1&limit=5&countrycodes=in`;
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.status === "OK") {
+          const suggestions = data.predictions.map(prediction => {
+            const mainText = prediction.structured_formatting?.main_text || "";
+            const secondaryText = prediction.structured_formatting?.secondary_text || "";
+            const state = secondaryText.split(",")[0].trim();
 
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": "CabX-BookingApp/1.0" // Required by Nominatim policy
+            return {
+              id: prediction.place_id,
+              name: mainText,
+              state: state,
+              fullName: prediction.description,
+              type: type
+            };
+          });
+          return res.json(suggestions);
+        } else {
+          console.warn(`Google Maps API status: ${data.status} - ${data.error_message || ""}. Falling back to Nominatim.`);
+        }
       }
+    }
+  } catch (err) {
+    console.error("Google Maps API error, falling back to Nominatim:", err);
+  }
+
+  // FALLBACK TO NOMINATIM
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(search)}&format=json&addressdetails=1&limit=5&countrycodes=in`;
+    const response = await fetch(url, {
+      headers: { "User-Agent": "CabX-BookingApp/1.0" }
     });
 
-    if (!response.ok) {
-      throw new Error(`Geocoding error: ${response.status}`);
-    }
+    if (!response.ok) throw new Error(`Nominatim error: ${response.status}`);
 
     const data = await response.json();
-
     const uniqueNames = new Set();
     const suggestions = [];
 
     data.forEach(item => {
-      // Create a nice display name
       const parts = item.display_name.split(',').map(s => s.trim());
       const mainText = parts[0];
-      const subText = parts.length > 1 ? parts.slice(1, 3).join(', ') : "";
-      const cityId = item.place_id || item.osm_id;
+      const state = item.address?.state || item.address?.state_district || (parts.length > 1 ? parts[1] : "");
 
       if (!uniqueNames.has(mainText)) {
         uniqueNames.add(mainText);
         suggestions.push({
-          id: cityId,
+          id: item.place_id || item.osm_id,
           name: mainText,
+          state: state,
           fullName: item.display_name,
-          subText: subText,
-          latitude: item.lat,
-          longitude: item.lon,
-          type: type // Echo back the type if requested
+          type: type
         });
       }
     });
 
     res.json(suggestions);
   } catch (err) {
-    console.error("City fetch error:", err);
+    console.error("City fetch fallback error:", err);
     res.status(500).json({ error: "Failed to fetch city suggestions", details: err.message });
   }
 }

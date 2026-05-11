@@ -21,9 +21,26 @@ const calculateDynamicPrice = async ({ tripType, from, carCategoryName, date }) 
 
   // 3. Apply Day-of-Week Trend
   try {
-    const tytTrendData = await prisma.tytTrend.findUnique({
-      where: { tripType }
+    let tytTrendData = await prisma.tytTrend.findUnique({
+      where: { 
+        tripType_city: {
+          tripType,
+          city: from
+        }
+      }
     });
+
+    // Fallback to "All" if city-specific not found
+    if (!tytTrendData) {
+      tytTrendData = await prisma.tytTrend.findUnique({
+        where: { 
+          tripType_city: {
+            tripType,
+            city: "All"
+          }
+        }
+      });
+    }
 
     console.log(`[PRICING] Calculating for ${from} | ${carCategoryName} | ${tripType} | Date: ${date}`);
 

@@ -193,16 +193,21 @@ const getTytTrends = async (req, res) => {
 // FACTORY: SAVE TREND
 const saveTytTrend = async (req, res) => {
     try {
-        const { tripType, config } = req.body;
+        const { tripType, config, city = "All" } = req.body;
         
         if (!tripType || !config) {
             return res.status(400).json({ message: "tripType and config are required" });
         }
 
         const trend = await prisma.tytTrend.upsert({
-            where: { tripType },
+            where: { 
+                tripType_city: {
+                    tripType,
+                    city: city || "All"
+                }
+            },
             update: { config },
-            create: { tripType, config }
+            create: { tripType, config, city: city || "All" }
         });
 
         res.json({ message: "Configuration saved successfully", trend });

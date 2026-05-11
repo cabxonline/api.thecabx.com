@@ -15,7 +15,7 @@ const normalizeCity = (city) => city?.split(",")[0]?.trim() || ""
 
 const generateBookingNumber = () => `CBX-${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100)}`
 
-const calculatePriceInternal = async (carId, from, tripType, extras, couponCode, email, phone, date) => {
+const calculatePriceInternal = async (carId, from, tripType, extras, couponCode, email, phone, date, days = 1) => {
   const category = await prisma.carCategory.findUnique({
     where: { id: Number(carId) }
   })
@@ -35,7 +35,10 @@ const calculatePriceInternal = async (carId, from, tripType, extras, couponCode,
     return { error: "Route pricing not found" }
   }
 
-  let total = dynamicPrice
+  const daysMultiplier = (tripType === "roundtrip" || tripType === "local") ? (parseInt(days) || 1) : 1;
+  const totalBasePrice = dynamicPrice * daysMultiplier;
+
+  let total = totalBasePrice
 
   if (extras?.pet) total += 500
   if (extras?.carrier) total += 100
@@ -69,7 +72,7 @@ const calculatePriceInternal = async (carId, from, tripType, extras, couponCode,
     grandTotal, 
     partial: Math.round(grandTotal * 0.2), 
     basePrice: dynamicPrice, 
-    multiplier: 1, 
+    multiplier: daysMultiplier, 
     discountAmount, 
     couponId, 
     originalTotal: total 
@@ -84,7 +87,7 @@ exports.createOrder = async (req, res) => {
     console.log(`🚀 [${requestId}] CREATE ORDER HIT`)
     console.log(`📥 [${requestId}] Body:`, req.body)
 
-    const { carId, from, to, tripType, paymentType, extras, couponCode, email, phone, date } = req.body
+    const { carId, from, to, tripType, paymentType, extras, couponCode, email, phone, date, days } = req.body
 
     // 🔴 Validation
     if (!carId) {
@@ -103,7 +106,8 @@ exports.createOrder = async (req, res) => {
       couponCode,
       email,
       phone,
-      date
+      date,
+      days
     )
 
     console.log(`📊 [${requestId}] Price Result:`, priceResult)
@@ -216,7 +220,8 @@ exports.verifyPayment = async (req, res) => {
       bookingData.couponCode,
       bookingData.customer?.email,
       bookingData.customer?.phone,
-      bookingData.date
+      bookingData.date,
+      bookingData.days || 1
     )
 
     console.log(`📊 [${requestId}] Price Result:`, priceResult)
@@ -369,7 +374,7 @@ exports.paylaterBooking = async (req, res) => {
 
     const { userId, categoryId, from, to, tripType, customer, extras, couponCode } = req.body
 
-    const priceResult = await calculatePriceInternal(categoryId, from, tripType, extras, couponCode, customer?.email, customer?.phone, req.body.date)
+    const priceResult = await calculatePriceInternal(categoryId, from, tripType, extras, couponCode, customer?.email, customer?.phone, req.body.date, req.body.days || 1)
 
     console.log(`📊 [${requestId}] Price:`, priceResult)
 

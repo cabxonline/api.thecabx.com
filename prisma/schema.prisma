@@ -313,10 +313,13 @@ model Coupon {
 
 model TytTrend {
   id        Int      @id @default(autoincrement())
-  tripType  String   @unique // "roundtrip", "local", "airport"
+  tripType  String   // "roundtrip", "local", "airport"
+  city      String   @default("All") // The city it applies to
   config    Json     // stores day-by-day trend configuration
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([tripType, city])
 }
 
 model Notification {
