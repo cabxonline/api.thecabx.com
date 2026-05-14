@@ -201,7 +201,7 @@ exports.getDates = async (req, res) => {
     let tytTrendData = null;
     if (tripType) {
       const cityFilter = from?.split(",")[0]?.trim() || "All";
-      
+
       // Try to find city-specific trend first
       tytTrendData = await prisma.tytTrend.findFirst({
         where: { tripType, city: cityFilter }
@@ -275,8 +275,12 @@ exports.getCities = async (req, res) => {
   try {
     const apiKey = process.env.GOOGLE_MAPS_API_KEY;
     if (apiKey) {
-      // Using Google Places Autocomplete API for better "short word" suggestions
-      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(search)}&types=(cities)&key=${apiKey}&components=country:in`;
+      // Determine if we should restrict to cities or allow airports/locations
+      // If trip type is airport or search contains 'airport', we allow more than just cities
+      const isAirportSearch = type === "airport" || search.toLowerCase().includes("airport");
+      const typesParam = isAirportSearch ? "" : "types=(cities)&";
+
+      const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(search)}&${typesParam}key=${apiKey}&components=country:in`;
 
       const response = await fetch(url);
       if (response.ok) {

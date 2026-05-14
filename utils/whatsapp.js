@@ -14,7 +14,7 @@ const sendTemplate = async (phone, templateName, variables) => {
     const res = await sendWhatsAppMessage({
       phone: normalizedPhone,
       templateName,
-      variables,
+      variables: variables.map(v => String(v)),
       apiKey: process.env.WHATSAPP_PROJECT_KEY,
       apiSecret: process.env.WHATSAPP_PROJECT_SECRET,
     });
@@ -79,10 +79,19 @@ const sendBookingConfirmedWhatsapp = (phone, data) => {
   ]);
 };
 
+// 6. Status Updated
+const sendStatusUpdatedWhatsapp = (phone, data) => {
+  return sendTemplate(phone, "status_updated", [
+    data.name,
+    data.status,
+  ]);
+};
+
 module.exports = {
   sendRideCompletedWhatsapp,
   sendBookingCancelledWhatsapp,
   sendRideReminderWhatsapp,
   sendDriverAssignedWhatsapp,
-  sendBookingConfirmedWhatsapp
+  sendBookingConfirmedWhatsapp,
+  sendStatusUpdatedWhatsapp
 };

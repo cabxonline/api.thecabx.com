@@ -3,7 +3,8 @@ const {
   sendBookingCancelledWhatsapp,
   sendRideReminderWhatsapp,
   sendDriverAssignedWhatsapp,
-  sendBookingConfirmedWhatsapp
+  sendBookingConfirmedWhatsapp,
+  sendStatusUpdatedWhatsapp
 } = require("./whatsapp");
 
 const {
@@ -48,11 +49,14 @@ const notifyBookingConfirmed = async (email, phone, data) => {
   await logNotification(data.bookingId, "Booking Confirmed", data);
 };
 
+const notifyStatusUpdated = async (phone, data) => {
+  if (phone) await sendStatusUpdatedWhatsapp(phone, data);
+  // We don't necessarily log this to the notification table unless desired
+};
+
 // Log to DB for In-App Dashboard & Client Notifications
 const logNotification = async (bookingId, type, data) => {
   try {
-    // Attempting to create an in-app notification if the table exists
-    // The user requested a dashboard notification system
     const booking = await prisma.booking.findUnique({ where: { id: bookingId }});
     if (booking && booking.userId) {
        await prisma.notification.create({
@@ -74,5 +78,6 @@ module.exports = {
   notifyBookingCancelled,
   notifyRideReminder,
   notifyDriverAssigned,
-  notifyBookingConfirmed
+  notifyBookingConfirmed,
+  notifyStatusUpdated
 };

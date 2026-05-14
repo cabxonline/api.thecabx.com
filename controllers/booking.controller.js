@@ -3,7 +3,8 @@ const {
   notifyBookingConfirmed, 
   notifyRideCompleted, 
   notifyDriverAssigned, 
-  notifyBookingCancelled 
+  notifyBookingCancelled,
+  notifyStatusUpdated
 } = require("../utils/notification")
 
 const generateBookingNumber = () => `CBX-${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100)}`
@@ -261,6 +262,21 @@ exports.updateBooking = async (req, res) => {
           });
         } catch (e) {
           console.error("Failed to send ride_completed_v1 notification", e);
+        }
+      } else {
+        // General status update notification (e.g. dispatched, pending, etc.)
+        try {
+          const user = await prisma.user.findUnique({ where: { id: booking.userId } });
+          const phoneTo = booking.mobileNumber || user?.phone;
+          
+          if (phoneTo) {
+            await notifyStatusUpdated(phoneTo, {
+              name: booking.guestName || user?.name || "Customer",
+              status: updateData.status.replace("_", " ").toUpperCase()
+            });
+          }
+        } catch (e) {
+          console.error("Failed to send status_updated notification", e);
         }
       }
     }
