@@ -636,6 +636,82 @@ exports.deleteBooking = async (req, res) => {
 }
 
 /*
+REBOOK BOOKING (USER ACTION)
+POST /bookings/:id/rebook
+*/
+exports.rebookBooking = async (req, res) => {
+  try {
+    const { id } = req.params
+    const { scheduledDate, pickupTime } = req.body
+    const userId = Number(req.user.userId)
+
+    if (!scheduledDate) {
+      return res.status(400).json({ message: "Scheduled date is required." })
+    }
+
+    // Find original booking
+    const original = await prisma.booking.findUnique({
+      where: { id: Number(id) }
+    })
+
+    if (!original) {
+      return res.status(404).json({ message: "Original booking not found" })
+    }
+
+    // Security: Ensure the booking belongs to the user
+    if (original.userId !== userId) {
+      return res.status(403).json({ message: "Unauthorized to rebook this ticket" })
+    }
+
+    // Create new booking with same details
+    const newBooking = await prisma.booking.create({
+      data: {
+        bookingNumber: generateBookingNumber(),
+        userId: original.userId,
+        carCategoryId: original.carCategoryId,
+        pickupAddress: original.pickupAddress,
+        dropAddress: original.dropAddress,
+        guestName: original.guestName,
+        gender: original.gender,
+        mobileNumber: original.mobileNumber,
+        corporateName: original.corporateName,
+        hub: original.hub,
+        fare: original.fare,
+        grandTotal: original.grandTotal,
+        pickupTime: pickupTime || original.pickupTime,
+        scheduledAt: new Date(scheduledDate),
+        status: "new_booking", // New booking starts fresh
+        paymentStatus: "pending",
+        tytRate: original.tytRate,
+        multiplyBy: original.multiplyBy,
+        packageId: original.packageId
+      }
+    })
+
+    // Log the rebook action on both tickets
+    await prisma.bookingLog.createMany({
+      data: [
+        {
+          bookingId: original.id,
+          action: "REBOOK_SOURCE",
+          message: `Customer initiated rebook: Created new ticket #${newBooking.bookingNumber}`
+        },
+        {
+          bookingId: newBooking.id,
+          action: "REBOOK_NEW",
+          message: `Ticket created via Rebook from #${original.bookingNumber}`
+        }
+      ]
+    })
+
+    res.json({ message: "Rebook successful", booking: newBooking })
+  } catch (err) {
+    console.error("Rebook Error:", err)
+    res.status(500).json({ message: "Failed to rebook journey" })
+  }
+}
+
+/*
 USER BOOKINGS
 GET /bookings/my
 */

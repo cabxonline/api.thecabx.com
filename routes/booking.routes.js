@@ -37,7 +37,6 @@ router.get(
 router.get(
   "/:id",
   auth,
-  permission("booking.read"),
   bookingController.getBooking
 )
 
@@ -87,6 +86,13 @@ router.post(
   auth,
   permission("booking.update"),
   bookingController.cancelBooking
+)
+
+// REBOOK BOOKING (USER)
+router.post(
+  "/:id/rebook",
+  auth,
+  bookingController.rebookBooking
 )
 
 // DELETE BOOKING

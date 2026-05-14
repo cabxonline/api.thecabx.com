@@ -69,7 +69,7 @@ router.delete(
 )
 
 router.post(
-  "/:roleId/permissions/bulk",
+  "/:roleId/permissions-bulk",
   auth,
   permission("role.update"),
   roleController.assignPermissionsBulk
