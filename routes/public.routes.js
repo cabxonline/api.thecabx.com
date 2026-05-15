@@ -10,5 +10,6 @@ router.get("/place-details", publicController.getPlaceDetails)
 
 const couponController = require("../controllers/coupon.controller")
 router.get("/suggested-coupons", couponController.getSuggestedCoupons)
+router.get("/offers", couponController.getPublicOffers)
 
 module.exports = router

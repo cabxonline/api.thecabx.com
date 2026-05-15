@@ -298,3 +298,30 @@ exports.getSuggestedCoupons = async (req, res) => {
     res.status(500).json({ error: "Failed to fetch suggestions" });
   }
 };
+exports.getPublicOffers = async (req, res) => {
+  try {
+    const now = new Date();
+    const coupons = await prisma.coupon.findMany({
+      where: {
+        isActive: true,
+        OR: [
+          { startDate: null },
+          { startDate: { lte: now } }
+        ],
+        AND: [
+          {
+            OR: [
+              { endDate: null },
+              { endDate: { gte: now } }
+            ]
+          }
+        ]
+      },
+      orderBy: { createdAt: "desc" }
+    });
+    res.json(coupons);
+  } catch (err) {
+    console.error("Get public offers error:", err);
+    res.status(500).json({ error: "Failed to fetch offers" });
+  }
+};
