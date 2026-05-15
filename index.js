@@ -65,6 +65,7 @@ app.use("/api/blogs", require("./routes/blog.routes"));
 app.use("/api/notifications", require("./routes/notification.routes"));
 app.use("/api/policies", require("./routes/policy.routes"))
 app.use("/api/support", require("./routes/support.routes"));
+app.use("/api/airport-rates", require("./routes/airport.routes"));
 /*
 |--------------------------------------------------------------------------
 | Public Booking APIs (search etc)

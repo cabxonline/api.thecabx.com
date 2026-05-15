@@ -1,10 +1,12 @@
 const prisma = require("../utils/prisma")
-const { 
-  notifyBookingConfirmed, 
-  notifyRideCompleted, 
-  notifyDriverAssigned, 
+const {
+  notifyBookingConfirmed,
+  notifyRideCompleted,
+  notifyDriverAssigned,
   notifyBookingCancelled,
-  notifyStatusUpdated
+  notifyStatusUpdated,
+  notifyPaymentLink,
+  notifyCashCollected
 } = require("../utils/notification")
 
 const generateBookingNumber = () => `CBX-${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100)}`
@@ -123,9 +125,9 @@ exports.getBookings = async (req, res) => {
     const where = {}
     if (userId) where.userId = Number(userId)
     if (type === 'package') {
-        where.packageId = { not: null }
+      where.packageId = { not: null }
     } else if (type === 'car') {
-        where.packageId = null
+      where.packageId = null
     }
 
     const bookings = await prisma.booking.findMany({
@@ -155,7 +157,7 @@ GET /bookings/poll/latest
 exports.pollNewBookings = async (req, res) => {
   try {
     const lastId = req.query.lastId ? Number(req.query.lastId) : 0;
-    
+
     // Get the latest booking ID and the total count of new bookings
     const latestBooking = await prisma.booking.findFirst({
       orderBy: { id: 'desc' },
@@ -231,6 +233,12 @@ exports.updateBooking = async (req, res) => {
     if (updateData.userId) updateData.userId = Number(updateData.userId)
     if (updateData.carCategoryId) updateData.carCategoryId = Number(updateData.carCategoryId)
 
+    // Automatically unassign driver/car on completion to free them up
+    if (updateData.status === "completed") {
+      updateData.driverId = null
+      updateData.carId = null
+    }
+
     const booking = await prisma.booking.update({
       where: { id: Number(id) },
       data: updateData
@@ -268,7 +276,7 @@ exports.updateBooking = async (req, res) => {
         try {
           const user = await prisma.user.findUnique({ where: { id: booking.userId } });
           const phoneTo = booking.mobileNumber || user?.phone;
-          
+
           if (phoneTo) {
             await notifyStatusUpdated(phoneTo, {
               name: booking.guestName || user?.name || "Customer",
@@ -276,7 +284,7 @@ exports.updateBooking = async (req, res) => {
             });
           }
         } catch (e) {
-          console.error("Failed to send status_updated notification", e);
+          console.error("Failed to send status_updated_v1 notification", e);
         }
       }
     }
@@ -403,11 +411,13 @@ exports.resolveCashPayment = async (req, res) => {
       .filter(p => p.status === "paid")
       .reduce((sum, p) => sum + p.amount, 0)
     const totalFare = (booking.fare || 0) + (booking.extraKmCost || 0) + (booking.tollsCost || 0)
+    const pendingDues = totalFare - amountPaid
+
     const { amount } = req.body
     const collectionAmount = amount ? Number(amount) : pendingDues
 
-    if (collectionAmount <= 0) {
-      return res.status(400).json({ message: "Collection amount must be positive" })
+    if (isNaN(collectionAmount) || collectionAmount <= 0) {
+      return res.status(400).json({ message: "Valid collection amount is required and must be positive" })
     }
 
     const payment = await prisma.payment.create({
@@ -415,8 +425,7 @@ exports.resolveCashPayment = async (req, res) => {
         bookingId: booking.id,
         amount: collectionAmount,
         status: "paid",
-        provider: "cash",
-        method: "cash"
+        provider: "cash"
       }
     })
 
@@ -436,6 +445,21 @@ exports.resolveCashPayment = async (req, res) => {
         message: `Admin registered cash collection of ₹${collectionAmount.toFixed(2)} (${newStatus})`
       }
     })
+    
+    // Notification for Cash Collection
+    try {
+      const user = await prisma.user.findUnique({ where: { id: booking.userId } });
+      const phoneTo = booking.mobileNumber || user?.phone;
+      if (phoneTo) {
+        await notifyCashCollected(phoneTo, {
+          name: booking.guestName || user?.name || "Customer",
+          amount: collectionAmount.toFixed(2),
+          bookingId: booking.bookingNumber
+        });
+      }
+    } catch (e) {
+      console.error("Failed to send cash collection notification", e);
+    }
 
     res.json({ message: `Cash collection of ₹${collectionAmount} logged successfully`, payment })
   } catch (err) {
@@ -474,7 +498,25 @@ exports.sendPaymentLink = async (req, res) => {
         message: `Dispatched remote payment link for ₹${pendingDues.toFixed(2)}`
       }
     })
-    res.json({ message: `Secure Razorpay link for ₹${pendingDues} dispatched to ${booking.user?.email || "customer"}!` })
+
+    // Notification for Payment Link
+    try {
+      const user = await prisma.user.findUnique({ where: { id: booking.userId } });
+      const emailTo = booking.email || user?.email;
+      const phoneTo = booking.mobileNumber || user?.phone;
+      const paymentLink = `${process.env.FRONTEND_URL || 'https://thecabx.com'}/checkout/payment?bookingId=${booking.id}`;
+
+      await notifyPaymentLink(emailTo, phoneTo, {
+        name: booking.guestName || user?.name || "Customer",
+        link: paymentLink,
+        bookingId: booking.bookingNumber,
+        amount: pendingDues.toFixed(2)
+      });
+    } catch (e) {
+      console.error("Failed to send payment link notification", e);
+    }
+
+    res.json({ message: `Secure Razorpay link for ₹${pendingDues.toFixed(2)} dispatched to ${booking.guestName || "customer"}!` })
   } catch (err) {
     console.error("Dispatch Link Error:", err)
     res.status(500).json({ message: "Failed to dispatch payment link" })
@@ -499,7 +541,7 @@ exports.sendInvoice = async (req, res) => {
       .filter(p => p.status === "paid")
       .reduce((sum, p) => sum + p.amount, 0);
     const totalFare = (booking.fare || 0) + (booking.extraKmCost || 0) + (booking.tollsCost || 0);
-    
+
     // Construct Invoice Link
     const invoiceLink = `${process.env.FRONTEND_URL || 'https://thecabx.com'}/invoice/${booking.bookingNumber}`;
 
@@ -516,7 +558,7 @@ exports.sendInvoice = async (req, res) => {
     if (booking.email || booking.user?.email) {
       await sendMailTemplate("booking_invoice", booking.email || booking.user.email, notifyData);
     }
-    
+
     const phoneTo = booking.mobileNumber || booking.user?.phone;
     if (phoneTo) {
       // Assuming a generic template or booking_invoice whatsapp template exists
@@ -752,3 +794,33 @@ exports.myBookings = async (req, res) => {
     res.status(500).json({ message: "Failed to load bookings" })
   }
 }
+
+exports.downloadInvoice = async (req, res) => {
+  const { id } = req.params;
+  const { generateInvoicePDF } = require("../utils/pdfGenerator");
+
+  try {
+    const booking = await prisma.booking.findUnique({
+      where: { id: Number(id) },
+      include: {
+        carCategory: true,
+        user: true,
+        payments: true
+      }
+    });
+
+    if (!booking) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+
+    const pdfBuffer = await generateInvoicePDF(booking);
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename=Invoice_${booking.bookingNumber}.pdf`);
+    res.send(pdfBuffer);
+
+  } catch (err) {
+    console.error("PDF Download Error:", err);
+    res.status(500).json({ error: "Failed to generate invoice" });
+  }
+};

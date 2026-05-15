@@ -233,3 +233,68 @@ exports.validateCoupon = async (req, res) => {
     res.status(500).json({ error: "Failed to validate coupon" });
   }
 };
+exports.getSuggestedCoupons = async (req, res) => {
+  try {
+    const { city, tripType, isPackage, amount } = req.query;
+    
+    const now = new Date();
+    
+    // Fetch active coupons
+    let coupons = await prisma.coupon.findMany({
+      where: {
+        isActive: true,
+        OR: [
+          { startDate: null },
+          { startDate: { lte: now } }
+        ],
+        AND: [
+          {
+            OR: [
+              { endDate: null },
+              { endDate: { gte: now } }
+            ]
+          }
+        ]
+      },
+      orderBy: { createdAt: "desc" }
+    });
+
+    const normalizeCity = (c) => c?.split(",")[0]?.trim()?.toLowerCase() || "";
+
+    // Client-side filtering for city and tripType and usage
+    const filtered = coupons.filter(coupon => {
+      // 1. Usage check
+      if (coupon.totalUsageLimit && coupon.usedCount >= coupon.totalUsageLimit) return false;
+
+      // 2. Applicable on check
+      if (coupon.applicableOn === "booking" && isPackage === "true") return false;
+      if (coupon.applicableOn === "package" && isPackage !== "true") return false;
+
+      // 3. Min order value check
+      if (coupon.minOrderValue && amount && Number(amount) < coupon.minOrderValue) return false;
+
+      // 4. City check (CRITICAL PART)
+      if (coupon.targetCity && city) {
+        const target = normalizeCity(coupon.targetCity);
+        const current = normalizeCity(city);
+        
+        // Match if targetCity is "Global", "All", or exact match
+        if (target !== "global" && target !== "all" && target !== "" && target !== current) {
+           return false;
+        }
+      }
+
+      // 5. Trip Type check
+      if (coupon.tripType && tripType) {
+        if (coupon.tripType.toLowerCase() !== tripType.toLowerCase()) return false;
+      }
+
+      return true;
+    });
+
+    res.json(filtered.slice(0, 6)); // Return top 6 suggestions
+  } catch (err) {
+    console.error("Get suggested coupons error:", err);
+    res.status(500).json({ error: "Failed to fetch suggestions" });
+  }
+};

@@ -15,7 +15,7 @@ const normalizeCity = (city) => city?.split(",")[0]?.trim() || ""
 
 const generateBookingNumber = () => `CBX-${Date.now().toString().slice(-6)}${Math.floor(Math.random() * 100)}`
 
-const calculatePriceInternal = async (carId, from, tripType, extras, couponCode, email, phone, date, days = 1) => {
+const calculatePriceInternal = async (carId, from, tripType, extras, couponCode, email, phone, date, days = 1, distance = null) => {
   const category = await prisma.carCategory.findUnique({
     where: { id: Number(carId) }
   })
@@ -28,7 +28,8 @@ const calculatePriceInternal = async (carId, from, tripType, extras, couponCode,
     tripType,
     from: city,
     carCategoryName: category.name,
-    date: date
+    date: date,
+    distance: Number(distance) || null
   })
 
   if (!dynamicPrice) {
@@ -70,7 +71,7 @@ const calculatePriceInternal = async (carId, from, tripType, extras, couponCode,
   return { 
     total: newTotal, 
     grandTotal, 
-    partial: Math.round(grandTotal * 0.2), 
+    partial: Math.round(grandTotal * 0.25), 
     basePrice: dynamicPrice, 
     multiplier: daysMultiplier, 
     discountAmount, 
@@ -87,7 +88,7 @@ exports.createOrder = async (req, res) => {
     console.log(`🚀 [${requestId}] CREATE ORDER HIT`)
     console.log(`📥 [${requestId}] Body:`, req.body)
 
-    const { carId, from, to, tripType, paymentType, extras, couponCode, email, phone, date, days } = req.body
+    const { carId, from, to, tripType, paymentType, extras, couponCode, email, phone, date, days, distance } = req.body
 
     // 🔴 Validation
     if (!carId) {
@@ -107,7 +108,8 @@ exports.createOrder = async (req, res) => {
       email,
       phone,
       date,
-      days
+      days,
+      distance
     )
 
     console.log(`📊 [${requestId}] Price Result:`, priceResult)
@@ -204,12 +206,12 @@ exports.verifyPayment = async (req, res) => {
       return res.status(400).json({ message: "Invalid payment" })
     }
 
-    // 🔥 SMART FALLBACKS (important fix)
-    const tripType = bookingData.tripType || (bookingData.to ? "roundtrip" : "airport")
+    // 🔥 SMART FALLBACKS (improved)
+    const tripType = bookingData.tripType || (bookingData.from?.toLowerCase().includes("airport") || bookingData.to?.toLowerCase().includes("airport") ? "airport" : "roundtrip")
 
     console.log(`🧠 [${requestId}] TripType used:`, tripType)
 
-    // 🧮 Price calculation (FIXED)
+    // 🧮 Price calculation (FIXED: Pass distance)
     console.log(`🧮 [${requestId}] Calculating price...`)
 
     const priceResult = await calculatePriceInternal(
@@ -221,7 +223,8 @@ exports.verifyPayment = async (req, res) => {
       bookingData.customer?.email,
       bookingData.customer?.phone,
       bookingData.date,
-      bookingData.days || 1
+      bookingData.days || 1,
+      bookingData.distance
     )
 
     console.log(`📊 [${requestId}] Price Result:`, priceResult)
@@ -300,7 +303,7 @@ exports.verifyPayment = async (req, res) => {
         exactDropAddress: bookingData.customer?.dropAddress || null,
         pickupTime: bookingData.time || "Not Specified",
         fare: total,
-        grandTotal: total,
+        grandTotal: grandTotal,
         mobileNumber: bookingData.mobileNumber || user.phone || "9999999999",
         guestName: bookingData.guestName || user.name,
         email: bookingData.customer?.email || user.email,
@@ -310,13 +313,24 @@ exports.verifyPayment = async (req, res) => {
         multiplyBy: multiplier,
         status: "new_booking",
         paymentStatus: isFullyPaid ? "paid" : "partial",
-        grandTotal: grandTotal,
         couponId: couponId,
-        discountAmount: discountAmount
+        discountAmount: discountAmount,
+        totalDistance: bookingData.totalDistance || null,
+        totalDuration: bookingData.totalDuration || null,
+        distance: bookingData.distance ? Number(bookingData.distance) : null
       }
     })
 
     console.log(`📦 [${requestId}] Booking Created:`, booking)
+
+    // 🎟️ Update coupon usage count
+    if (couponId) {
+      await prisma.coupon.update({
+        where: { id: couponId },
+        data: { usedCount: { increment: 1 } }
+      });
+      console.log(`🎟️ [${requestId}] Coupon ${couponId} usage incremented`);
+    }
 
     // 💳 Payment record
     await prisma.payment.create({
@@ -372,9 +386,9 @@ exports.paylaterBooking = async (req, res) => {
   try {
     console.log(`🚀 [${requestId}] PAY LATER HIT`, req.body)
 
-    const { userId, categoryId, from, to, tripType, customer, extras, couponCode } = req.body
+    const { userId, categoryId, from, to, tripType, customer, extras, couponCode, distance } = req.body
 
-    const priceResult = await calculatePriceInternal(categoryId, from, tripType, extras, couponCode, customer?.email, customer?.phone, req.body.date, req.body.days || 1)
+    const priceResult = await calculatePriceInternal(categoryId, from, tripType, extras, couponCode, customer?.email, customer?.phone, req.body.date, req.body.days || 1, distance)
 
     console.log(`📊 [${requestId}] Price:`, priceResult)
 
@@ -431,11 +445,23 @@ exports.paylaterBooking = async (req, res) => {
         paymentStatus: "pending",
         grandTotal: grandTotal,
         couponId: couponId,
-        discountAmount: discountAmount
+        discountAmount: discountAmount,
+        totalDistance: req.body.totalDistance || null,
+        totalDuration: req.body.totalDuration || null,
+        distance: req.body.distance ? Number(req.body.distance) : null
       }
     })
 
     console.log(`📦 [${requestId}] Booking Created`, booking)
+
+    // 🎟️ Update coupon usage count
+    if (couponId) {
+      await prisma.coupon.update({
+        where: { id: couponId },
+        data: { usedCount: { increment: 1 } }
+      });
+      console.log(`🎟️ [${requestId}] Coupon ${couponId} usage incremented`);
+    }
 
     // 📩 Trigger Notifications
     try {
@@ -477,6 +503,41 @@ exports.getBookingStatus = async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch status" });
+  }
+};
+
+exports.downloadInvoice = async (req, res) => {
+  const { id } = req.params;
+  const { generateInvoicePDF } = require("../utils/pdfGenerator");
+
+  try {
+    const booking = await prisma.booking.findFirst({
+      where: {
+        OR: [
+          { id: isNaN(id) ? -1 : Number(id) },
+          { bookingNumber: id }
+        ]
+      },
+      include: {
+        carCategory: true,
+        user: true,
+        payments: true
+      }
+    });
+
+    if (!booking) {
+      return res.status(404).json({ error: "Booking not found" });
+    }
+
+    const pdfBuffer = await generateInvoicePDF(booking);
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename=Invoice_${booking.bookingNumber}.pdf`);
+    res.send(pdfBuffer);
+
+  } catch (err) {
+    console.error("PDF Download Error:", err);
+    res.status(500).json({ error: "Failed to generate invoice" });
   }
 };
 

@@ -8,6 +8,7 @@ router.post("/create-order",controller.createOrder)
 router.post("/verify",controller.verifyPayment)
 router.post("/paylater",controller.paylaterBooking)
 router.get("/booking-status/:id", controller.getBookingStatus)
+router.get("/booking-invoice/:id", controller.downloadInvoice)
 
 // User specific
 router.get("/user/transactions", verifyToken, controller.getUserPayments)

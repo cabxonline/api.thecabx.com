@@ -214,10 +214,28 @@ const sendBookingConfirmedEmail = async (email, data) => {
   return sendEmail(email, subject, html);
 };
 
+// 6. Payment Link
+const sendPaymentLinkEmail = async (email, data) => {
+  const subject = `Complete Your Payment - Booking #${data.bookingId}`;
+  const html = wrapHtml(`
+    <h2 style="color: #0f172a; font-size: 24px; margin-top: 0; margin-bottom: 24px;">Action Required: Payment Pending</h2>
+    <p style="color: #475569; font-size: 16px; line-height: 24px; margin-bottom: 24px;">Hi ${data.name}, please use the link below to complete the payment for your booking <strong>#${data.bookingId}</strong>.</p>
+    
+    <div style="text-align: center; margin: 40px 0;">
+      <a href="${data.link}" style="background-color: ${brandColor}; color: #ffffff; padding: 16px 32px; border-radius: 12px; font-weight: bold; text-decoration: none; display: inline-block; box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2);">Pay Now ₹${data.amount}</a>
+    </div>
+    
+    <p style="color: #64748b; font-size: 14px; text-align: center;">If the button above doesn't work, copy and paste this link: <br/> ${data.link}</p>
+  `, subject);
+
+  return sendEmail(email, subject, html);
+};
+
 module.exports = {
   sendRideCompletedEmail,
   sendBookingCancelledEmail,
   sendRideReminderEmail,
   sendDriverAssignedEmail,
-  sendBookingConfirmedEmail
+  sendBookingConfirmedEmail,
+  sendPaymentLinkEmail
 };

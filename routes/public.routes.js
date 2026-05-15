@@ -6,5 +6,9 @@ router.get("/stats", publicController.getStats)
 router.get("/dates", publicController.getDates)
 router.post("/package-enquiry", publicController.submitPackageEnquiry)
 router.get("/cities", publicController.getCities)
+router.get("/place-details", publicController.getPlaceDetails)
+
+const couponController = require("../controllers/coupon.controller")
+router.get("/suggested-coupons", couponController.getSuggestedCoupons)
 
 module.exports = router

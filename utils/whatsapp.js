@@ -1,6 +1,6 @@
 const { sendWhatsAppMessage } = require("messegy");
 
-const sendTemplate = async (phone, templateName, variables) => {
+const sendTemplate = async (phone, templateName, variables, language = "en") => {
   try {
     // Normalize phone
     let normalizedPhone = String(phone).replace(/[^0-9]/g, '');
@@ -14,6 +14,7 @@ const sendTemplate = async (phone, templateName, variables) => {
     const res = await sendWhatsAppMessage({
       phone: normalizedPhone,
       templateName,
+      language,
       variables: variables.map(v => String(v)),
       apiKey: process.env.WHATSAPP_PROJECT_KEY,
       apiSecret: process.env.WHATSAPP_PROJECT_SECRET,
@@ -81,9 +82,27 @@ const sendBookingConfirmedWhatsapp = (phone, data) => {
 
 // 6. Status Updated
 const sendStatusUpdatedWhatsapp = (phone, data) => {
-  return sendTemplate(phone, "status_updated", [
+  return sendTemplate(phone, "status_updated_v1", [
     data.name,
     data.status,
+  ], "en_US");
+};
+
+// 7. Payment Link
+const sendPaymentLinkWhatsapp = (phone, data) => {
+  return sendTemplate(phone, "razorpay_payment_link_v1", [
+    data.name,
+    data.bookingId,
+    data.link,
+  ]);
+};
+
+// 8. Cash Collected
+const sendCashCollectedWhatsapp = (phone, data) => {
+  return sendTemplate(phone, "cash_submitted_to_driver_v1", [
+    data.name,
+    data.amount,
+    data.bookingId,
   ]);
 };
 
@@ -93,5 +112,7 @@ module.exports = {
   sendRideReminderWhatsapp,
   sendDriverAssignedWhatsapp,
   sendBookingConfirmedWhatsapp,
-  sendStatusUpdatedWhatsapp
+  sendStatusUpdatedWhatsapp,
+  sendPaymentLinkWhatsapp,
+  sendCashCollectedWhatsapp
 };

@@ -4,7 +4,72 @@ const prisma = require("./prisma");
  * Calculates the dynamic price for a car category based on route, trip type, and day-of-week trends.
  * Ensures 100% parity between Search and Payment.
  */
-const calculateDynamicPrice = async ({ tripType, from, carCategoryName, date }) => {
+const calculateDynamicPrice = async ({ tripType, from, carCategoryName, date, distance }) => {
+  // 0. Airport Fixed Pricing (PRIORITY)
+  if (tripType === "airport" && distance) {
+    // Fetch all potential rates for this category and range
+    const allPotentialRates = await prisma.airportRate.findMany({
+      where: {
+        carCategory: { name: carCategoryName },
+        maxKm: { gte: Math.ceil(distance) }
+      },
+      orderBy: { maxKm: 'asc' }
+    });
+
+    // Find the best match: specific city match (substring), airport code mapping, or Global
+    // We sort specific cities to the top, Global to the bottom
+    const sortedRates = allPotentialRates.sort((a, b) => {
+      if (a.city === "Global") return 1;
+      if (b.city === "Global") return -1;
+      return 0;
+    });
+
+    const fixedRate = sortedRates.find(r => {
+      if (r.city === "Global") return true;
+      if (!from) return false;
+      
+      const cleanFrom = from.toLowerCase();
+      const cleanCity = r.city.toLowerCase();
+
+      // Direct substring match
+      if (cleanFrom.includes(cleanCity)) return true;
+
+      // Common Airport Codes Mapping
+      const airportMappings = {
+        "lko": "lucknow",
+        "del": "delhi",
+        "bom": "mumbai",
+        "blr": "bangalore",
+        "pnq": "pune",
+        "maa": "chennai",
+        "ccu": "kolkata",
+        "hyd": "hyderabad"
+      };
+
+      for (const [code, city] of Object.entries(airportMappings)) {
+        if (cleanFrom.includes(`(${code})`) && cleanCity.includes(city)) return true;
+      }
+
+      return false;
+    });
+
+    if (fixedRate) {
+      console.log(`[PRICING] Using Fixed Airport Range Rate for ${from} (${distance}km): ₹${fixedRate.price} [Match: ${fixedRate.city}]`);
+      return fixedRate.price;
+    }
+  }
+
+  // 0.1 Airport Radius Pricing (FALLBACK)
+  if (tripType === "airport" && distance) {
+    let rate = 32;
+    if (distance <= 10) rate = 10;
+    else if (distance <= 20) rate = 20;
+    else if (distance <= 40) rate = 30;
+
+    console.log(`[PRICING] Airport Radius Logic: ${distance}km @ ₹${rate}/km`);
+    return Math.round(distance * rate);
+  }
+
   // 1. Fetch the base stock price
   const stock = await prisma.stock.findFirst({
     where: { 

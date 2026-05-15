@@ -40,6 +40,13 @@ router.get(
   bookingController.getBooking
 )
 
+// DOWNLOAD INVOICE PDF
+router.get(
+  "/:id/invoice",
+  auth,
+  bookingController.downloadInvoice
+)
+
 // UPDATE BOOKING
 router.patch(
   "/:id",

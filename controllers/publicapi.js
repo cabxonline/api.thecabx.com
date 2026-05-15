@@ -6,7 +6,7 @@ SEARCH CARS
 */
 exports.searchCars = async (req, res) => {
   try {
-    const { tripType, from, to, date } = req.body
+    const { tripType, from, to, date, distance } = req.body
     const categories = await prisma.carCategory.findMany()
 
     // Fix Node.js parsing year 2001 if only Day and Month are provided (e.g. "15-May")
@@ -24,7 +24,8 @@ exports.searchCars = async (req, res) => {
           from: from?.split(",")[0]?.trim(), // Normalize city
           to,
           carCategoryName: cat.name,
-          date: dateStr
+          date: dateStr,
+          distance: Number(distance) || null
         });
 
         return {
@@ -185,7 +186,7 @@ GET AVAILABLE DATES
 */
 exports.getDates = async (req, res) => {
   try {
-    const { from, to, tripType, category } = req.query;
+    const { from, to, tripType, category, distance } = req.query;
     const dates = [];
     const today = new Date();
 
@@ -230,7 +231,8 @@ exports.getDates = async (req, res) => {
         tripType,
         from: from?.split(",")[0]?.trim(), // Normalize city
         carCategoryName: category,
-        date: dStr
+        date: dStr,
+        distance: Number(distance) || null
       });
 
       // Fetch trend for tags
@@ -334,7 +336,9 @@ exports.getCities = async (req, res) => {
           name: mainText,
           state: state,
           fullName: item.display_name,
-          type: type
+          type: type,
+          lat: parseFloat(item.lat),
+          lon: parseFloat(item.lon)
         });
       }
     });
@@ -343,5 +347,31 @@ exports.getCities = async (req, res) => {
   } catch (err) {
     console.error("City fetch fallback error:", err);
     res.status(500).json({ error: "Failed to fetch city suggestions", details: err.message });
+  }
+}
+
+/*
+GET PLACE DETAILS (FOR COORDINATES)
+*/
+exports.getPlaceDetails = async (req, res) => {
+  const { placeId } = req.query;
+  if (!placeId) return res.status(400).json({ error: "placeId is required" });
+
+  try {
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return res.status(500).json({ error: "API key missing" });
+
+    const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=geometry&key=${apiKey}`;
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.status === "OK") {
+      const { lat, lng } = data.result.geometry.location;
+      res.json({ lat, lon: lng });
+    } else {
+      res.status(404).json({ error: "Place details not found" });
+    }
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch place details" });
   }
 }

@@ -4,7 +4,9 @@ const {
   sendRideReminderWhatsapp,
   sendDriverAssignedWhatsapp,
   sendBookingConfirmedWhatsapp,
-  sendStatusUpdatedWhatsapp
+  sendStatusUpdatedWhatsapp,
+  sendPaymentLinkWhatsapp,
+  sendCashCollectedWhatsapp
 } = require("./whatsapp");
 
 const {
@@ -12,7 +14,8 @@ const {
   sendBookingCancelledEmail,
   sendRideReminderEmail,
   sendDriverAssignedEmail,
-  sendBookingConfirmedEmail
+  sendBookingConfirmedEmail,
+  sendPaymentLinkEmail
 } = require("./email");
 
 const prisma = require("./prisma");
@@ -45,6 +48,13 @@ const notifyDriverAssigned = async (email, phone, data) => {
 
 const notifyBookingConfirmed = async (email, phone, data) => {
   if (email) await sendBookingConfirmedEmail(email, data);
+  
+  // Admin Notification Copy
+  await sendBookingConfirmedEmail("cabxonline@gmail.com", { 
+    ...data, 
+    name: "Admin (CabX)" 
+  });
+
   if (phone) await sendBookingConfirmedWhatsapp(phone, data);
   await logNotification(data.bookingId, "Booking Confirmed", data);
 };
@@ -54,22 +64,41 @@ const notifyStatusUpdated = async (phone, data) => {
   // We don't necessarily log this to the notification table unless desired
 };
 
+const notifyPaymentLink = async (email, phone, data) => {
+  if (email) await sendPaymentLinkEmail(email, data);
+  if (phone) await sendPaymentLinkWhatsapp(phone, data);
+  await logNotification(data.bookingId, "Payment Link Sent", data);
+};
+
+const notifyCashCollected = async (phone, data) => {
+  if (phone) await sendCashCollectedWhatsapp(phone, data);
+  await logNotification(data.bookingId, "Cash Collected", data);
+};
+
 // Log to DB for In-App Dashboard & Client Notifications
 const logNotification = async (bookingId, type, data) => {
   try {
-    const booking = await prisma.booking.findUnique({ where: { id: bookingId }});
+    if (!bookingId) return;
+
+    let booking;
+    if (typeof bookingId === "number") {
+      booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+    } else {
+      booking = await prisma.booking.findUnique({ where: { bookingNumber: String(bookingId) } });
+    }
+
     if (booking && booking.userId) {
-       await prisma.notification.create({
-          data: {
-             userId: booking.userId,
-             bookingId: bookingId,
-             type: type,
-             message: JSON.stringify(data)
-          }
-       });
+      await prisma.notification.create({
+        data: {
+          userId: booking.userId,
+          bookingId: booking.id,
+          type: type,
+          message: JSON.stringify(data)
+        }
+      });
     }
   } catch (err) {
-    // If table doesn't exist yet, just ignore.
+    console.error("[NOTIFICATION_LOG_ERROR]:", err.message);
   }
 };
 
@@ -79,5 +108,7 @@ module.exports = {
   notifyRideReminder,
   notifyDriverAssigned,
   notifyBookingConfirmed,
-  notifyStatusUpdated
+  notifyStatusUpdated,
+  notifyPaymentLink,
+  notifyCashCollected
 };

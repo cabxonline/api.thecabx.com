@@ -68,6 +68,7 @@ model CarCategory {
   bookings Booking[]
   manualPricing ManualPricing[]
   packageEnquiries PackageEnquiry[]
+  airportRates     AirportRate[]
 
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -138,6 +139,10 @@ model Booking {
   paymentStatus String @default("pending")
   tytRate       Float?
   multiplyBy    Float @default(1)
+  totalDistance String?
+  totalDuration String?
+  distance      Float?
+  
   createdAt   DateTime @default(now())
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -416,4 +421,19 @@ model Blog {
 
   @@index([slug])
   @@index([category])
+}
+
+model AirportRate {
+  id Int @id @default(autoincrement())
+  city           String   @default("Global")
+  carCategoryId  Int
+  price          Float
+  maxKm          Int      // Upper bound of the radius bracket (e.g. 10, 20, 30...)
+  
+  carCategory    CarCategory @relation(fields: [carCategoryId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  @@unique([city, carCategoryId, maxKm])
 }

@@ -59,7 +59,7 @@ const calculatePackagePriceInternal = async (packageId, categoryId, extras, coup
   const gst = Math.round(newTotal * 0.05)
   const grandTotal = newTotal + gst
 
-  return { total: newTotal, grandTotal, partial: Math.round(grandTotal * 0.2), basePrice, pkg, category, discountAmount, couponId, originalTotal: total }
+  return { total: newTotal, grandTotal, partial: Math.round(grandTotal * 0.25), basePrice, pkg, category, discountAmount, couponId, originalTotal: total }
 }
 
 exports.createOrder = async (req, res) => {
