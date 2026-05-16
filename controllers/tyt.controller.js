@@ -217,6 +217,19 @@ const saveTytTrend = async (req, res) => {
     }
 };
 
+// DAILY LOGS
+const getDailyLogs = async (req, res) => {
+    try {
+        const logs = await prisma.tytDailyLog.findMany({
+            orderBy: { date: "desc" },
+            take: 100 // Limit to latest 100
+        });
+        res.json(logs);
+    } catch (err) {
+        res.status(500).json({ message: "Failed to fetch logs", error: err.message });
+    }
+};
+
 module.exports = {
     createStock,
     createBulkStock,
@@ -226,5 +239,6 @@ module.exports = {
     deleteStock,
     toggleTrend,
     getTytTrends,
-    saveTytTrend
+    saveTytTrend,
+    getDailyLogs
 };

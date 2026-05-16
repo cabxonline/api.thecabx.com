@@ -71,43 +71,58 @@ const calculateDynamicPrice = async ({ tripType, from, carCategoryName, date, di
   }
 
   // 1. Fetch the base stock price
+  // Normalize city: If 'from' is a full address, try to find which part matches our Stock cities
+  let normalizedFrom = from;
+  if (from && from.includes(",")) {
+    const parts = from.split(",").map(p => p.trim());
+    const availableCities = await prisma.stock.findMany({
+      select: { from: true },
+      distinct: ['from']
+    });
+    const cityNames = availableCities.map(c => c.from.toLowerCase());
+    
+    for (const part of parts) {
+      if (cityNames.includes(part.toLowerCase())) {
+        normalizedFrom = part;
+        break;
+      }
+    }
+  }
+
   const stock = await prisma.stock.findFirst({
     where: { 
-      from: from,
+      from: normalizedFrom,
       car: carCategoryName
     }
   });
 
   if (!stock) return null;
 
-  // 2. Determine multiplier
-  const multiplier = tripType === "roundtrip" ? 300 : tripType === "local" ? 120 : 180;
+  // 2. Determine multiplier (Dynamic from DB)
+  const multRecord = await prisma.tripMultiplier.findUnique({ where: { tripType } });
+  const multiplier = multRecord ? multRecord.multiplier : (tripType === "roundtrip" ? 300 : tripType === "local" ? 120 : 180);
   let basePrice = Math.round(stock.price * multiplier);
 
   // 3. Apply Day-of-Week Trend
   try {
-    let tytTrendData = await prisma.tytTrend.findUnique({
+    let tytTrendData = await prisma.tytTrend.findFirst({
       where: { 
-        tripType_city: {
-          tripType,
-          city: from
-        }
+        tripType,
+        city: normalizedFrom
       }
     });
 
     // Fallback to "All" if city-specific not found
     if (!tytTrendData) {
-      tytTrendData = await prisma.tytTrend.findUnique({
+      tytTrendData = await prisma.tytTrend.findFirst({
         where: { 
-          tripType_city: {
-            tripType,
-            city: "All"
-          }
+          tripType,
+          city: "All"
         }
       });
     }
 
-    console.log(`[PRICING] Calculating for ${from} | ${carCategoryName} | ${tripType} | Date: ${date}`);
+    console.log(`[PRICING] Calculating for ${normalizedFrom} | ${carCategoryName} | ${tripType} | Date: ${date}`);
 
     if (tytTrendData && tytTrendData.config) {
       let dateStr = date || "";

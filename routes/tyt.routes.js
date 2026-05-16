@@ -9,12 +9,25 @@ const {
     deleteStock,
     toggleTrend,
     getTytTrends,
-    saveTytTrend
+    saveTytTrend,
+    getDailyLogs
 } = require("../controllers/tyt.controller");
+
+const {
+    getMultipliers,
+    saveMultiplier
+} = require("../controllers/multiplier.controller");
 
 // Factory
 router.get("/factory", getTytTrends);
 router.post("/factory", saveTytTrend);
+
+// Daily Logs
+router.get("/daily-logs", getDailyLogs);
+
+// Multipliers
+router.get("/multipliers", getMultipliers);
+router.post("/multipliers", saveMultiplier);
 
 // CRUD
 router.post("/", createStock);

@@ -21,7 +21,7 @@ exports.searchCars = async (req, res) => {
         // Use Centralized Pricing Logic
         const price = await calculateDynamicPrice({
           tripType,
-          from: from?.split(",")[0]?.trim(), // Normalize city
+          from: from, // Pass full address, normalization happens in pricing utility
           to,
           carCategoryName: cat.name,
           date: dateStr,
@@ -201,15 +201,30 @@ exports.getDates = async (req, res) => {
 
     let tytTrendData = null;
     if (tripType) {
-      const cityFilter = from?.split(",")[0]?.trim() || "All";
+      let normalizedFrom = from || "All";
+      if (from && from.includes(",")) {
+        const parts = from.split(",").map(p => p.trim());
+        const availableCities = await prisma.stock.findMany({
+          select: { from: true },
+          distinct: ['from']
+        });
+        const cityNames = availableCities.map(c => c.from.toLowerCase());
+        
+        for (const part of parts) {
+          if (cityNames.includes(part.toLowerCase())) {
+            normalizedFrom = part;
+            break;
+          }
+        }
+      }
 
       // Try to find city-specific trend first
       tytTrendData = await prisma.tytTrend.findFirst({
-        where: { tripType, city: cityFilter }
+        where: { tripType, city: normalizedFrom }
       });
 
       // Fallback to "All" if no city-specific trend exists
-      if (!tytTrendData && cityFilter !== "All") {
+      if (!tytTrendData && normalizedFrom !== "All") {
         tytTrendData = await prisma.tytTrend.findFirst({
           where: { tripType, city: "All" }
         });
@@ -229,7 +244,7 @@ exports.getDates = async (req, res) => {
 
       const displayPrice = await calculateDynamicPrice({
         tripType,
-        from: from?.split(",")[0]?.trim(), // Normalize city
+        from: from, // Pass full address, normalization happens in pricing utility
         carCategoryName: category,
         date: dStr,
         distance: Number(distance) || null

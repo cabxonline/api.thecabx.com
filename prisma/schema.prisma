@@ -437,3 +437,25 @@ model AirportRate {
 
   @@unique([city, carCategoryId, maxKm])
 }
+model TytDailyLog {
+  id        Int      @id @default(autoincrement())
+  stockId   Int
+  from      String
+  car       String
+  basePrice Float
+  finalPrice Float
+  trend     String
+  percentage String
+  date      DateTime @default(now())
+
+  @@index([stockId])
+  @@index([date])
+}
+
+model TripMultiplier {
+  id        Int      @id @default(autoincrement())
+  tripType  String   @unique // "roundtrip", "local", "airport"
+  multiplier Float
+  
+  updatedAt DateTime @default(now()) @updatedAt
+}
